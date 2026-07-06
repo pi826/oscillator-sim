@@ -6,8 +6,10 @@ integration steps per frame (speed slider) is independent of it.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
@@ -50,10 +52,30 @@ _SPACE_MODES: dict[str, str] = {
 }
 
 
+@dataclass(frozen=True)
+class LaunchOptions:
+    """Initial configuration applied on startup (CLI-driven)."""
+
+    space: str | None = None
+    model: str | None = None
+    curve: str | None = None
+    omega_mode: str | None = None
+    rotation_mode: str | None = None
+    coupling: str | None = None
+    branching: str | None = None
+    n: int | None = None
+    seed: int | None = None
+    speed: float | None = None
+    fps: int | None = None
+    play: bool = False
+    viewer: bool = False
+
+
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, launch: LaunchOptions | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Phase Oscillator Simulator")
+        self.viewer_mode = bool(launch and launch.viewer)
 
         self.canvas2d = Canvas2D()
         self.canvas3d = Canvas3D()
@@ -63,17 +85,20 @@ class MainWindow(QMainWindow):
 
         self.controls = ControlPanel(spaces=list(_SPACE_MODES))
         self.status = StatusPanel()
-        side = QWidget()
-        side_layout = QVBoxLayout(side)
+        self._side = QWidget()
+        side_layout = QVBoxLayout(self._side)
         side_layout.addWidget(self.controls)
         side_layout.addWidget(self.status)
-        side.setFixedWidth(380)
+        self._side.setFixedWidth(380)
 
         central = QWidget()
         layout = QHBoxLayout(central)
         layout.addWidget(self.stacked, stretch=1)
-        layout.addWidget(side)
+        layout.addWidget(self._side)
         self.setCentralWidget(central)
+        if self.viewer_mode:
+            self._side.hide()
+            layout.setContentsMargins(0, 0, 0, 0)
 
         self.controls.configChanged.connect(self._rebuild)
         self.controls.resetRequested.connect(self._rebuild)
@@ -92,7 +117,40 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self._on_tick)
 
         self._rebuild()
+        if launch is not None:
+            self._apply_launch(launch)
         self._timer.start()
+
+    def _apply_launch(self, launch: LaunchOptions) -> None:
+        if launch.space is not None:
+            self.controls.set_choices(space=launch.space)
+            # repopulate the mode-dependent combos before setting their values
+            self.controls.set_mode(_SPACE_MODES[launch.space])
+        self.controls.set_choices(
+            model=launch.model,
+            curve=launch.curve,
+            omega_mode=launch.omega_mode,
+            rotation_mode=launch.rotation_mode,
+            coupling=launch.coupling,
+            branching=launch.branching,
+            n=launch.n,
+            seed=launch.seed,
+        )
+        self._rebuild()
+        if launch.speed is not None:
+            self.controls.set_speed(launch.speed)
+        if launch.fps is not None:
+            self._timer.setInterval(max(1000 // max(launch.fps, 1), 5))
+        if launch.play:
+            self.controls.set_playing(True)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        if event.key() == Qt.Key.Key_Space:
+            self.controls.set_playing(not self.controls.playing)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
     # --- simulation construction -----------------------------------------
 
@@ -200,8 +258,13 @@ class MainWindow(QMainWindow):
     def _refresh(self, stepped: bool) -> None:
         state = self.sim.state
         self.controls.set_time(self.sim.t)
+        # in viewer mode the side panel is hidden: skip the observable /
+        # classification work and only keep the canvas alive
+        show_status = not self.viewer_mode
         if self.mode == "circle":
             self.canvas2d.set_points(self.space.positions(state), phase_brushes(state))
+            if not show_status:
+                return
             if stepped:
                 self.status.append(self.sim.t, order_parameter(state))
                 self.status.redraw()
@@ -212,6 +275,8 @@ class MainWindow(QMainWindow):
             self.canvas2d.set_points(self.space.positions(state), sigma_brushes(state.sigma))
             pol = edge_polarization(state.edge, state.sigma, len(self.space.edges))
             self.canvas2d.set_edge_polarizations(pol)
+            if not show_status:
+                return
             u_value = uniformity(state.edge, self.space.lengths, self.space.total_length)
             if stepped:
                 self.status.append(self.sim.t, u_value)
@@ -225,6 +290,8 @@ class MainWindow(QMainWindow):
                 self.status.set_extra(f"KS = {ks:.3f}\npolarization: {pol_text}")
         elif self.mode == "sphere":
             self.canvas3d.set_points(state, direction_colors(state))
+            if not show_status:
+                return
             if stepped:
                 self.status.append(self.sim.t, sphere_order_parameter(state))
                 self.status.redraw()

@@ -7,6 +7,7 @@ rules need no changes here.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal
@@ -167,6 +168,49 @@ class ControlPanel(QWidget):
 
     def set_time(self, t: float) -> None:
         self.time_label.setText(f"t = {t:.3f}")
+
+    def set_choices(
+        self,
+        *,
+        space: str | None = None,
+        model: str | None = None,
+        curve: str | None = None,
+        omega_mode: str | None = None,
+        rotation_mode: str | None = None,
+        coupling: str | None = None,
+        branching: str | None = None,
+        n: int | None = None,
+        seed: int | None = None,
+    ) -> None:
+        """Set several controls at once without emitting configChanged
+        (the caller is expected to rebuild once afterwards)."""
+        self._updating = True
+        try:
+            if space is not None:
+                self.space_combo.setCurrentText(space)
+            if model is not None:
+                self.model_combo.setCurrentText(model)
+            if curve is not None:
+                self.curve_combo.setCurrentText(curve)
+            if omega_mode is not None:
+                self.omega_combo.setCurrentText(omega_mode)
+            if rotation_mode is not None:
+                self.rotation_combo.setCurrentText(rotation_mode)
+            if coupling is not None:
+                self.coupling_combo.setCurrentText(coupling)
+            if branching is not None:
+                self.branching_combo.setCurrentText(branching)
+            if n is not None:
+                self.n_spin.setValue(n)
+            if seed is not None:
+                self.seed_spin.setValue(seed)
+        finally:
+            self._updating = False
+
+    def set_speed(self, steps_per_frame: float) -> None:
+        """Move the log slider to the position closest to the given speed."""
+        steps_per_frame = min(max(steps_per_frame, 0.1), 1000.0)
+        self.speed_slider.setValue(round((math.log10(steps_per_frame) + 1.0) * 20.0))
 
     def config(self) -> SimConfig:
         return SimConfig(
