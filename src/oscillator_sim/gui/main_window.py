@@ -20,17 +20,22 @@ from ..constants import DEFAULT_DT
 from ..core.graph_dynamics import GraphDynamics
 from ..core.observables import (
     classify_circle,
+    classify_sphere,
     edge_polarization,
     ks_statistic,
     order_parameter,
+    sphere_order_parameter,
     uniformity,
 )
-from ..core.omega import make_omega
+from ..core.omega import make_omega, make_rotations
 from ..core.simulation import CircleDynamics, Simulation
-from ..registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS
+from ..core.sphere_models import SphereDynamics
+from ..registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS, SPHERE_MODELS
 from ..space.circle import Circle
 from ..space.graph import MetricGraph
+from ..space.sphere import Sphere
 from .canvas2d import Canvas2D, phase_brushes, sigma_brushes
+from .canvas3d import Canvas3D, direction_colors
 from .controls import ControlPanel
 from .status_panel import StatusPanel
 
@@ -38,7 +43,11 @@ FRAME_INTERVAL_MS = 33
 MAX_STEPS_PER_FRAME = 2000
 CLASSIFY_EVERY_N_FRAMES = 10
 
-_SPACE_MODES: dict[str, str] = {Circle.name: "circle", MetricGraph.name: "graph"}
+_SPACE_MODES: dict[str, str] = {
+    Circle.name: "circle",
+    MetricGraph.name: "graph",
+    Sphere.name: "sphere",
+}
 
 
 class MainWindow(QMainWindow):
@@ -47,8 +56,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Phase Oscillator Simulator")
 
         self.canvas2d = Canvas2D()
+        self.canvas3d = Canvas3D()
         self.stacked = QStackedWidget()
         self.stacked.addWidget(self.canvas2d)
+        self.stacked.addWidget(self.canvas3d)
 
         self.controls = ControlPanel(spaces=list(_SPACE_MODES))
         self.status = StatusPanel()
@@ -71,6 +82,8 @@ class MainWindow(QMainWindow):
         self.controls.placementRequested.connect(self._on_place)
         self.canvas2d.addRequested.connect(self._on_add)
         self.canvas2d.removeRequested.connect(self._on_remove)
+        self.canvas3d.addRequested.connect(self._on_add)
+        self.canvas3d.removeIndexRequested.connect(self._on_remove_index)
 
         self._accum = 0.0
         self._frame = 0
@@ -113,7 +126,15 @@ class MainWindow(QMainWindow):
             self.canvas2d.set_curves([e.points for e in self.space.edges])
             self.status.set_series_name("U")
             self.stacked.setCurrentWidget(self.canvas2d)
-        else:  # pragma: no cover - other modes are added by later layers
+        elif mode == "sphere":
+            self.space = Sphere()
+            rotations = make_rotations(cfg.rotation_mode, cfg.n, rng)
+            self.model = SPHERE_MODELS.get(cfg.model)(rotations)
+            dynamics = SphereDynamics(self.model)
+            state = self.space.initial_states(cfg.n, rng, "random")
+            self.status.set_series_name("r")
+            self.stacked.setCurrentWidget(self.canvas3d)
+        else:
             raise ValueError(f"unknown mode {mode!r}")
 
         self.sim = Simulation(dynamics, state, DEFAULT_DT, rng)
@@ -129,6 +150,7 @@ class MainWindow(QMainWindow):
 
     def _on_play(self, playing: bool) -> None:
         self.canvas2d.interactive = not playing
+        self.canvas3d.interactive = not playing
 
     def _on_place(self, placement: str) -> None:
         if placement not in self.space.placement_modes:
@@ -139,16 +161,26 @@ class MainWindow(QMainWindow):
 
     def _on_add(self, point: np.ndarray) -> None:
         self.sim.state = self.space.add_at(self.sim.state, point, self.sim.rng)
-        extra = make_omega(self.cfg.omega_mode, 1, self.sim.rng)
-        self.model.omega = np.append(self.model.omega, extra)
+        if self.mode == "sphere":
+            extra = make_rotations(self.cfg.rotation_mode, 1, self.sim.rng)
+            self.model.rotations = np.vstack([self.model.rotations, extra])
+        else:
+            extra = make_omega(self.cfg.omega_mode, 1, self.sim.rng)
+            self.model.omega = np.append(self.model.omega, extra)
         self._refresh(stepped=True)
 
     def _on_remove(self, point: np.ndarray) -> None:
+        index = self.space.nearest_index(self.sim.state, point)
+        self._on_remove_index(index)
+
+    def _on_remove_index(self, index: int) -> None:
         if self.space.count(self.sim.state) <= 1:
             return
-        index = self.space.nearest_index(self.sim.state, point)
         self.sim.state = self.space.remove_index(self.sim.state, index)
-        self.model.omega = np.delete(self.model.omega, index)
+        if self.mode == "sphere":
+            self.model.rotations = np.delete(self.model.rotations, index, axis=0)
+        else:
+            self.model.omega = np.delete(self.model.omega, index)
         self._refresh(stepped=True)
 
     # --- frame loop --------------------------------------------------------
@@ -191,3 +223,11 @@ class MainWindow(QMainWindow):
                 )
                 pol_text = ", ".join(f"e{k}: {p:+.2f}" for k, p in enumerate(pol))
                 self.status.set_extra(f"KS = {ks:.3f}\npolarization: {pol_text}")
+        elif self.mode == "sphere":
+            self.canvas3d.set_points(state, direction_colors(state))
+            if stepped:
+                self.status.append(self.sim.t, sphere_order_parameter(state))
+                self.status.redraw()
+            if self._frame % CLASSIFY_EVERY_N_FRAMES == 0 or not stepped:
+                self.status.set_classification(classify_sphere(state))
+            self.status.set_extra("")
