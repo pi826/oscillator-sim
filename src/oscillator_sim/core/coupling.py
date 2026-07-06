@@ -46,3 +46,20 @@ class SecondHarmonicCoupling(GraphCoupling):
 
     def g(self, d: np.ndarray, total_length: float) -> np.ndarray:
         return np.sin(4.0 * np.pi * d / total_length)
+
+
+@GRAPH_COUPLINGS.register
+class MexicanHatCoupling(GraphCoupling):
+    """Difference of Gaussians (short-range boost, mid-range damping):
+    g(d) = exp(-(d/(s1*L))^2) - c * exp(-(d/(s2*L))^2). Tends to organize
+    the population into evenly spaced pulse packs."""
+
+    name = "Mexican hat"
+    SIGMA_NEAR = 0.1
+    SIGMA_FAR = 0.3
+    DEPTH = 0.5
+
+    def g(self, d: np.ndarray, total_length: float) -> np.ndarray:
+        near = np.exp(-((d / (self.SIGMA_NEAR * total_length)) ** 2))
+        far = np.exp(-((d / (self.SIGMA_FAR * total_length)) ** 2))
+        return near - self.DEPTH * far
