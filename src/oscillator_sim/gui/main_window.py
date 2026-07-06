@@ -17,12 +17,20 @@ from PySide6.QtWidgets import (
 )
 
 from ..constants import DEFAULT_DT
-from ..core.observables import classify_circle, order_parameter
+from ..core.graph_dynamics import GraphDynamics
+from ..core.observables import (
+    classify_circle,
+    edge_polarization,
+    ks_statistic,
+    order_parameter,
+    uniformity,
+)
 from ..core.omega import make_omega
 from ..core.simulation import CircleDynamics, Simulation
-from ..registry import CURVES, MODELS
+from ..registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS
 from ..space.circle import Circle
-from .canvas2d import Canvas2D, phase_brushes
+from ..space.graph import MetricGraph
+from .canvas2d import Canvas2D, phase_brushes, sigma_brushes
 from .controls import ControlPanel
 from .status_panel import StatusPanel
 
@@ -30,7 +38,7 @@ FRAME_INTERVAL_MS = 33
 MAX_STEPS_PER_FRAME = 2000
 CLASSIFY_EVERY_N_FRAMES = 10
 
-_SPACE_MODES: dict[str, str] = {Circle.name: "circle"}
+_SPACE_MODES: dict[str, str] = {Circle.name: "circle", MetricGraph.name: "graph"}
 
 
 class MainWindow(QMainWindow):
@@ -93,6 +101,18 @@ class MainWindow(QMainWindow):
             self.canvas2d.set_curves([self.space.curve_polyline()])
             self.status.set_series_name("r1")
             self.stacked.setCurrentWidget(self.canvas2d)
+        elif mode == "graph":
+            curve = CURVES.get(cfg.curve)()
+            self.space = MetricGraph(curve, rng)
+            omega = make_omega(cfg.omega_mode, cfg.n, rng)
+            coupling = GRAPH_COUPLINGS.get(cfg.coupling)()
+            branching = BRANCHING_RULES.get(cfg.branching)()
+            self.model = GraphDynamics(self.space, omega, coupling, branching, rng)
+            dynamics = self.model
+            state = self.space.initial_states(cfg.n, rng, "random")
+            self.canvas2d.set_curves([e.points for e in self.space.edges])
+            self.status.set_series_name("U")
+            self.stacked.setCurrentWidget(self.canvas2d)
         else:  # pragma: no cover - other modes are added by later layers
             raise ValueError(f"unknown mode {mode!r}")
 
@@ -119,9 +139,8 @@ class MainWindow(QMainWindow):
 
     def _on_add(self, point: np.ndarray) -> None:
         self.sim.state = self.space.add_at(self.sim.state, point, self.sim.rng)
-        if self.mode == "circle":
-            extra = make_omega(self.cfg.omega_mode, 1, self.sim.rng)
-            self.model.omega = np.append(self.model.omega, extra)
+        extra = make_omega(self.cfg.omega_mode, 1, self.sim.rng)
+        self.model.omega = np.append(self.model.omega, extra)
         self._refresh(stepped=True)
 
     def _on_remove(self, point: np.ndarray) -> None:
@@ -129,8 +148,7 @@ class MainWindow(QMainWindow):
             return
         index = self.space.nearest_index(self.sim.state, point)
         self.sim.state = self.space.remove_index(self.sim.state, index)
-        if self.mode == "circle":
-            self.model.omega = np.delete(self.model.omega, index)
+        self.model.omega = np.delete(self.model.omega, index)
         self._refresh(stepped=True)
 
     # --- frame loop --------------------------------------------------------
@@ -158,3 +176,18 @@ class MainWindow(QMainWindow):
             if self._frame % CLASSIFY_EVERY_N_FRAMES == 0 or not stepped:
                 self.status.set_classification(classify_circle(state))
             self.status.set_extra("")
+        elif self.mode == "graph":
+            self.canvas2d.set_points(self.space.positions(state), sigma_brushes(state.sigma))
+            pol = edge_polarization(state.edge, state.sigma, len(self.space.edges))
+            self.canvas2d.set_edge_polarizations(pol)
+            u_value = uniformity(state.edge, self.space.lengths, self.space.total_length)
+            if stepped:
+                self.status.append(self.sim.t, u_value)
+                self.status.redraw()
+            self.status.set_classification(f"U = {u_value:.3f}")
+            if self._frame % CLASSIFY_EVERY_N_FRAMES == 0 or not stepped:
+                ks = ks_statistic(
+                    self.space.sample_pair_distances(state), self.space.reference_distances
+                )
+                pol_text = ", ".join(f"e{k}: {p:+.2f}" for k, p in enumerate(pol))
+                self.status.set_extra(f"KS = {ks:.3f}\npolarization: {pol_text}")

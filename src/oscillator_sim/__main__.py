@@ -9,7 +9,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     # import implementation modules so they register themselves
-    from .core import models  # noqa: F401
+    from .core import branching, coupling, models  # noqa: F401
     from .geometry import curves  # noqa: F401
     from .gui.main_window import MainWindow
 
