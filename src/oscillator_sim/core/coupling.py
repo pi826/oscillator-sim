@@ -25,3 +25,24 @@ class SineGeodesicCoupling(GraphCoupling):
 
     def g(self, d: np.ndarray, total_length: float) -> np.ndarray:
         return np.sin(2.0 * np.pi * d / total_length)
+
+
+@GRAPH_COUPLINGS.register
+class RepulsiveSineCoupling(GraphCoupling):
+    """Sign-flipped kernel: nearby oscillators slow each other down less
+    than distant ones, which spreads the population out (U -> 1)."""
+
+    name = "-sin(2*pi*d/L)"
+
+    def g(self, d: np.ndarray, total_length: float) -> np.ndarray:
+        return -np.sin(2.0 * np.pi * d / total_length)
+
+
+@GRAPH_COUPLINGS.register
+class SecondHarmonicCoupling(GraphCoupling):
+    """Second-harmonic kernel; favors two antipodal packs on the graph."""
+
+    name = "sin(4*pi*d/L)"
+
+    def g(self, d: np.ndarray, total_length: float) -> np.ndarray:
+        return np.sin(4.0 * np.pi * d / total_length)
