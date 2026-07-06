@@ -1,0 +1,19 @@
+[project]
+name = "oscillator-sim"
+version = "0.1.0"
+description = "Interactive phase-oscillator simulator on S1, metric graphs, and S2"
+readme = "README.md"
+authors = [
+    { name = "ringoarerugi-", email = "148020887+r12357@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "pyopengl>=3.1.10",
+    "pyqtgraph>=0.14.0",
+    "pyside6>=6.11.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
