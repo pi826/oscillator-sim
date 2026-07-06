@@ -58,6 +58,7 @@ class Canvas2D(pg.PlotWidget):
         self.interactive = False
 
         self._edge_items: list[pg.PlotDataItem] = []
+        self._pol_cache: np.ndarray | None = None
         self._scatter = pg.ScatterPlotItem(pen=None, size=12)
         self.addItem(self._scatter)
         self.scene().sigMouseClicked.connect(self._on_click)
@@ -68,6 +69,7 @@ class Canvas2D(pg.PlotWidget):
         for item in self._edge_items:
             self.removeItem(item)
         self._edge_items = []
+        self._pol_cache = None
         for line in polylines:
             item = pg.PlotDataItem(
                 line[:, 0], line[:, 1], pen=pg.mkPen((180, 180, 180), width=_CURVE_PEN_WIDTH)
@@ -75,10 +77,32 @@ class Canvas2D(pg.PlotWidget):
             self.addItem(item)
             item.setZValue(-1)
             self._edge_items.append(item)
+        self._fix_view_range(polylines)
+
+    def _fix_view_range(self, polylines: list[np.ndarray]) -> None:
+        """Freeze the view on the curve's bounding box.
+
+        With auto-range left on, every scatter/pen update re-runs the range
+        computation and the view rectangle drifts a little each frame (most
+        visibly when oscillators cross a vertex and edge pens change), which
+        reads as the whole graph wobbling. Manual pan/zoom still works.
+        """
+        points = np.vstack(polylines)
+        (x0, y0), (x1, y1) = points.min(axis=0), points.max(axis=0)
+        vb = self.getPlotItem().getViewBox()
+        vb.disableAutoRange()
+        vb.setRange(xRange=(float(x0), float(x1)), yRange=(float(y0), float(y1)), padding=0.08)
 
     def set_edge_polarizations(self, p: np.ndarray) -> None:
-        for item, value in zip(self._edge_items, p):
+        # quantize and update only the edges whose value actually moved, so
+        # steady frames do not trigger repaints / bound recomputations
+        quantized = np.round(np.clip(np.asarray(p, dtype=np.float64), -1.0, 1.0) * 32.0) / 32.0
+        cache = self._pol_cache
+        for k, (item, value) in enumerate(zip(self._edge_items, quantized)):
+            if cache is not None and k < cache.size and cache[k] == value:
+                continue
             item.setPen(pg.mkPen(polarization_color(float(value)), width=_CURVE_PEN_WIDTH + 1))
+        self._pol_cache = quantized
 
     def set_points(self, pos: np.ndarray, brushes: list[QColor]) -> None:
         self._scatter.setData(pos=pos, brush=brushes)
