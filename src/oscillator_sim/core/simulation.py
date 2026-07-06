@@ -26,15 +26,36 @@ class Dynamics(ABC):
 
 
 class CircleDynamics(Dynamics):
-    """S1 dynamics: RK4 on dtheta, phases kept in [0, 2*pi)."""
+    """S1 dynamics: RK4 on dtheta, phases kept in [0, 2*pi).
+
+    Second-order models are integrated on the extended state (theta, v);
+    the velocities are kept here (initialized to omega = free rotation,
+    and re-initialized whenever the oscillator count changes).
+    """
 
     def __init__(self, model: OscillatorModel, stepper: Stepper | None = None) -> None:
         self.model = model
         self.stepper: Stepper = stepper if stepper is not None else RK4Stepper()
+        self._velocity: np.ndarray | None = None
 
     def step(self, state: np.ndarray, t: float, dt: float) -> np.ndarray:
+        if self.model.second_order:
+            return self._step_second_order(state, t, dt)
         theta = self.stepper.step(self.model.dtheta, state, t, dt)
         return np.mod(theta, TWO_PI)
+
+    def _step_second_order(self, state: np.ndarray, t: float, dt: float) -> np.ndarray:
+        n = state.size
+        if self._velocity is None or self._velocity.size != n:
+            self._velocity = self.model.omega.copy()
+
+        def f(y: np.ndarray, t_: float) -> np.ndarray:
+            theta, v = y[:n], y[n:]
+            return np.concatenate([v, self.model.accel(theta, v, t_)])
+
+        y = self.stepper.step(f, np.concatenate([state, self._velocity]), t, dt)
+        self._velocity = y[n:]
+        return np.mod(y[:n], TWO_PI)
 
 
 class Simulation:

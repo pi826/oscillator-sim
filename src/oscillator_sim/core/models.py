@@ -20,9 +20,15 @@ TWO_PI = 2.0 * np.pi
 
 
 class OscillatorModel(Parameterized, ABC):
-    """dtheta_i/dt for n phase oscillators with natural frequencies omega_i."""
+    """dtheta_i/dt for n phase oscillators with natural frequencies omega_i.
+
+    Second-order models (``second_order = True``) are integrated on the
+    extended state (theta, v) by ``CircleDynamics``; they implement
+    ``accel`` instead of a meaningful ``dtheta``.
+    """
 
     name: ClassVar[str]
+    second_order: ClassVar[bool] = False
 
     def __init__(self, omega: np.ndarray) -> None:
         super().__init__()
@@ -30,6 +36,9 @@ class OscillatorModel(Parameterized, ABC):
 
     @abstractmethod
     def dtheta(self, theta: np.ndarray, t: float) -> np.ndarray: ...
+
+    def accel(self, theta: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
+        raise NotImplementedError("only second-order models define accel()")
 
 
 @MODELS.register
@@ -164,3 +173,74 @@ class RingKuramotoModel(OscillatorModel):
         nxt = np.roll(theta, -1)
         prev = np.roll(theta, 1)
         return self.omega + (self.values["K"] / 2.0) * (np.sin(nxt - theta) + np.sin(prev - theta))
+
+
+@MODELS.register
+class NonlocalRingModel(OscillatorModel):
+    """Kuramoto-Battogtokh nonlocal coupling on the index ring:
+    dtheta_i/dt = omega_i - K sum_j G_ij sin(theta_i - theta_j + alpha),
+    G_ij proportional to exp(-kappa * d_ij) with the ring distance
+    d_ij = min(|i-j|, n-|i-j|)/n and rows normalized to sum 1.
+
+    Near alpha = pi/2 with moderate kappa this hosts chimera states:
+    a synchronized domain coexisting with an incoherent one.
+    """
+
+    name = "Nonlocal ring (chimera)"
+    params = {
+        "K": ParamSpec("K (coupling)", 1.0, -10.0, 10.0, 0.1),
+        "alpha": ParamSpec("alpha (phase lag)", 1.45, -3.2, 3.2, 0.01),
+        "kappa": ParamSpec("kappa (inverse range)", 4.0, 0.0, 50.0, 0.5),
+    }
+
+    def __init__(self, omega: np.ndarray) -> None:
+        super().__init__(omega)
+        self._kernel: np.ndarray | None = None
+        self._kernel_key: tuple[int, float] | None = None
+
+    def _kernel_for(self, n: int) -> np.ndarray:
+        key = (n, self.values["kappa"])
+        if self._kernel_key != key:
+            idx = np.arange(n)
+            d = np.abs(idx[:, None] - idx[None, :])
+            d = np.minimum(d, n - d) / n
+            g = np.exp(-self.values["kappa"] * d)
+            g /= g.sum(axis=1, keepdims=True)
+            self._kernel = g
+            self._kernel_key = key
+        return self._kernel  # type: ignore[return-value]
+
+    def dtheta(self, theta: np.ndarray, t: float) -> np.ndarray:
+        g = self._kernel_for(theta.size)
+        # sum_j G_ij sin(theta_i - theta_j + alpha)
+        #   = Im(exp(i(theta_i + alpha)) * sum_j G_ij exp(-i theta_j))
+        z = g @ np.exp(-1j * theta)
+        lagged = np.exp(1j * (theta + self.values["alpha"]))
+        return self.omega - self.values["K"] * np.imag(lagged * z)
+
+
+@MODELS.register
+class InertialKuramotoModel(OscillatorModel):
+    """Kuramoto with inertia (power-grid / swing equation form):
+    m theta''_i + theta'_i = omega_i + (K/n) sum_j sin(theta_j - theta_i).
+
+    Second order: CircleDynamics integrates the pair (theta, v) and keeps
+    the velocities internally (they start at v_i = omega_i, i.e. free
+    rotation, and restart there when the oscillator count changes).
+    """
+
+    name = "Kuramoto (inertia)"
+    second_order = True
+    params = {
+        "K": ParamSpec("K (coupling)", 2.0, -10.0, 10.0, 0.1),
+        "m": ParamSpec("m (inertia)", 1.0, 0.01, 20.0, 0.05),
+    }
+
+    def dtheta(self, theta: np.ndarray, t: float) -> np.ndarray:
+        raise NotImplementedError("second-order model; integrated via accel()")
+
+    def accel(self, theta: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
+        n = theta.size
+        z = np.exp(1j * theta).sum()
+        coupling = (self.values["K"] / n) * np.imag(np.exp(-1j * theta) * z)
+        return (self.omega + coupling - v) / self.values["m"]
