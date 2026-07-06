@@ -13,6 +13,11 @@ OMEGA_STD: float = 0.3
 # r_m >= this value counts as "r_m is (approximately) 1".
 R_ONE_THRESHOLD: float = 0.95
 
+# --- cotangent nearest-neighbor model ---------------------------------------
+# |cot| is clipped to this value so the fixed-step RK4 stays stable when two
+# neighboring phases (nearly) collide, where the exact vector field diverges
+COT_CLIP: float = 100.0
+
 # --- graph mode -------------------------------------------------------------
 # number of samples used to detect self-intersections of the curve
 CURVE_DETECT_SAMPLES: int = 1024
