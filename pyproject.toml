@@ -3,6 +3,7 @@ name = "oscillator-sim"
 version = "0.1.0"
 description = "Interactive phase-oscillator simulator on S1, metric graphs, and S2"
 readme = "README.md"
+license = { file = "LICENSE" }
 authors = [
     { name = "ringoarerugi-", email = "148020887+r12357@users.noreply.github.com" }
 ]
