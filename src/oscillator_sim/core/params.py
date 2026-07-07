@@ -17,6 +17,8 @@ class ParamSpec:
     minimum: float
     maximum: float
     step: float
+    #: spin-box decimals; 0 makes the parameter effectively an integer
+    decimals: int = 3
 
 
 class Parameterized:
