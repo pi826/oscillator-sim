@@ -1,11 +1,14 @@
-"""Best-effort embedding of a window behind the desktop icons (Windows).
+"""Keep a window glued to the bottom of the z-order (wallpaper mode).
 
-Uses the classic wallpaper-engine trick: message 0x052C makes Progman
-spawn a WorkerW layer behind the icon list (SHELLDLL_DefView); our window
-is then re-parented into that layer. On newer Windows 11 builds the
-DefView can live directly under Progman, in which case Progman itself is
-used as the parent. Returns False on any failure so callers can fall back
-to a normal bottom-most window.
+Historical note: the classic trick of re-parenting a window into the
+desktop's WorkerW layer (behind the icons) no longer works on recent
+Windows 11 builds - the window renders into its surface but DWM never
+composites children injected into Progman/WorkerW, so nothing shows up
+on screen (verified on build 26200). Additionally, while embedded that
+way, QApplication.quit() is silently ignored and the process cannot
+exit its event loop. Wallpaper mode therefore uses a full-screen,
+frameless, non-activating window pinned to the bottom of the z-order:
+it covers the desktop icons but reliably shows below every other window.
 """
 
 from __future__ import annotations
@@ -13,47 +16,37 @@ from __future__ import annotations
 import ctypes
 import sys
 
+_HWND_BOTTOM = 1
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+_SWP_NOACTIVATE = 0x0010
 
-def embed_into_desktop(win_id: int) -> bool:
+
+def pin_to_bottom(win_id: int) -> bool:
+    """Push the window to the bottom of the z-order (Windows)."""
     if sys.platform != "win32":
         return False
     try:
         user32 = ctypes.windll.user32
-        user32.FindWindowW.restype = ctypes.c_void_p
-        user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
-        user32.FindWindowExW.restype = ctypes.c_void_p
-        user32.FindWindowExW.argtypes = [
+        user32.SetWindowPos.argtypes = [
             ctypes.c_void_p,
             ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.c_wchar_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint,
         ]
-        user32.SetParent.restype = ctypes.c_void_p
-        user32.SetParent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-
-        progman = user32.FindWindowW("Progman", None)
-        if not progman:
-            return False
-
-        # ask Progman to create the WorkerW layer behind the desktop icons
-        result = ctypes.c_ulonglong()
-        user32.SendMessageTimeoutW(
-            ctypes.c_void_p(progman), 0x052C, 0, 0, 0, 1000, ctypes.byref(result)
+        return bool(
+            user32.SetWindowPos(
+                ctypes.c_void_p(win_id),
+                ctypes.c_void_p(_HWND_BOTTOM),
+                0,
+                0,
+                0,
+                0,
+                _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE,
+            )
         )
-
-        found: list[int] = []
-        proto = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
-
-        def _enum(hwnd: int, _lparam: int) -> int:
-            defview = user32.FindWindowExW(hwnd, None, "SHELLDLL_DefView", None)
-            if defview:
-                worker = user32.FindWindowExW(None, hwnd, "WorkerW", None)
-                if worker:
-                    found.append(worker)
-            return 1
-
-        user32.EnumWindows(proto(_enum), 0)
-        target = found[0] if found else progman
-        return bool(user32.SetParent(ctypes.c_void_p(win_id), ctypes.c_void_p(target)))
     except Exception:
         return False

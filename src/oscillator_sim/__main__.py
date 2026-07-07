@@ -52,10 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
     win.add_argument("--desktop", action="store_true",
                      help="frameless, bottom-most, no taskbar entry (desktop widget)")
     win.add_argument("--wallpaper", action="store_true",
-                     help="EXPERIMENTAL (Windows): embed fullscreen behind the desktop "
-                          "icons; watch-only, quit via taskkill")
+                     help="fullscreen bottom-most background (covers the desktop icons; "
+                          "quit from the tray icon)")
     win.add_argument("--size", help="window size WxH, e.g. 900x700")
     win.add_argument("--pos", help="window position X,Y, e.g. 60,60")
+    win.add_argument("--resolution", type=float, default=None,
+                     help="curve sampling multiplier (display smoothness), e.g. 2")
 
     misc = parser.add_argument_group("misc")
     misc.add_argument("--list", action="store_true", help="list registered names and exit")
@@ -199,6 +201,7 @@ def main() -> int:
         seed=ns.seed,
         speed=ns.speed,
         fps=ns.fps,
+        resolution=ns.resolution,
         play=(ns.play or ns.viewer or ns.desktop or ns.wallpaper) and not ns.paused,
         viewer=ns.viewer or ns.desktop or ns.wallpaper,
     )
@@ -218,8 +221,11 @@ def main() -> int:
         flags |= Qt.WindowType.FramelessWindowHint
     if ns.on_top:
         flags |= Qt.WindowType.WindowStaysOnTopHint
-    if ns.desktop:
+    if ns.desktop or ns.wallpaper:
         flags |= Qt.WindowType.WindowStaysOnBottomHint | Qt.WindowType.Tool
+    if ns.wallpaper:
+        # never take focus, so other windows always stay above
+        flags |= Qt.WindowType.WindowDoesNotAcceptFocus
     if flags != Qt.WindowType.Window:
         window.setWindowFlags(flags)
 
@@ -245,14 +251,21 @@ def main() -> int:
     window.show()
 
     if ns.wallpaper:
-        from .gui.wallpaper import embed_into_desktop
+        from .gui.wallpaper import pin_to_bottom
 
-        if not embed_into_desktop(int(window.winId())):
-            print("wallpaper embedding failed; falling back to a bottom-most window")
-            window.setWindowFlags(
-                flags | Qt.WindowType.WindowStaysOnBottomHint | Qt.WindowType.Tool
-            )
-            window.show()
+        pin_to_bottom(int(window.winId()))
+
+    # a single Ctrl+C quits: the default handler only raises inside a Python
+    # callback (our frame timer), where the KeyboardInterrupt gets swallowed
+    import signal
+
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+
+    tray = None
+    if launch.viewer:
+        from .gui.tray import create_tray
+
+        tray = create_tray(app, window)  # noqa: F841 - keep the reference alive
 
     return app.exec()
 
