@@ -13,6 +13,8 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
+pg.setConfigOptions(antialias=True)
+
 # direction colors in graph mode: sigma = +1 warm, sigma = -1 cool
 SIGMA_POS_COLOR = (255, 140, 0)
 SIGMA_NEG_COLOR = (70, 130, 255)

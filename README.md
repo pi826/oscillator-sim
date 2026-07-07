@@ -32,10 +32,18 @@ uv run python -m oscillator_sim --space graph --curve lissajous --viewer
 # デスクトップウィジェット風: 枠なし・最背面・タスクバー非表示
 uv run python -m oscillator_sim --space graph --curve lissajous --desktop --size 600x480 --pos 100,100
 
-# 実験的: デスクトップアイコンの背面(壁紙レイヤー)に全画面埋め込み
-# (Windows のみ。操作不可・終了は taskkill /im pythonw.exe など)
+# 壁紙風: 全画面・最背面・フォーカスを奪わない(デスクトップアイコンは隠れます)
 uv run python -m oscillator_sim --space graph --curve lissajous --wallpaper
 ```
+
+これらのモードでは**タスクトレイにアイコン**が表示され、右クリックメニュー
+から一時停止 / 終了できます(左クリックで再生/一時停止のトグル)。
+ターミナルから起動した場合は **Ctrl+C 一回**でも終了します。
+
+> 補足: 以前試みていた「壁紙レイヤー(アイコン背面)への埋め込み」は、
+> 新しめの Windows 11 ビルドでは Progman/WorkerW に注入した外部ウィンドウを
+> OS が画面合成しなくなったため表示されません(実測で確認)。そのため
+> `--wallpaper` は確実に表示される「全画面・最背面ウィンドウ」方式です。
 
 **ログイン時の自動起動**は、起動したいコマンドに `--install-startup` を
 付けて一度実行すると、スタートアップフォルダに登録されます
@@ -47,7 +55,13 @@ uv run python -m oscillator_sim --uninstall-startup   # 解除
 ```
 
 ビューアモードでは観測量・分類の計算(KS 統計量など)を省略して
-CPU 負荷を抑えます。`--fps 20` などでさらに描画レートを下げられます。
+CPU 負荷を抑えます。`--fps 20` などでさらに描画レートを下げられます
+(速度は「ステップ/フレーム」なので fps を下げると時間発展も遅くなります)。
+
+**曲線の解像度**は GUI の「Curve resolution」プルダウン(1x/2x/4x/8x、
+既定 2x)または `--resolution 4` で変更できます。S¹ モードの表示
+ポリラインとグラフモードの弧長サンプリングの両方に効きます。
+2D 描画はアンチエイリアス有効です。
 
 ## モジュール構成と責務
 

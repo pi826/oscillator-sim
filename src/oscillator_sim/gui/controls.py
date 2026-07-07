@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..constants import DEFAULT_N, DEFAULT_SEED
+from ..constants import DEFAULT_N, DEFAULT_RESOLUTION, DEFAULT_SEED, RESOLUTION_CHOICES
 from ..core.omega import OMEGA_MODES, SPHERE_ROTATION_MODES
 from ..core.params import ParamSpec
 from ..registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS, SPHERE_MODELS
@@ -42,6 +42,7 @@ class SimConfig:
     coupling: str
     branching: str
     seed: int
+    resolution: float
 
 
 class ControlPanel(QWidget):
@@ -74,12 +75,16 @@ class ControlPanel(QWidget):
         self.coupling_combo.addItems(GRAPH_COUPLINGS.names())
         self.branching_combo = QComboBox()
         self.branching_combo.addItems(BRANCHING_RULES.names())
+        self.resolution_combo = QComboBox()
+        self.resolution_combo.addItems([f"{r:g}x" for r in RESOLUTION_CHOICES])
+        self.resolution_combo.setCurrentText(f"{DEFAULT_RESOLUTION:g}x")
         self.seed_spin = QSpinBox(minimum=0, maximum=2**31 - 1, value=DEFAULT_SEED)
 
         form.addRow("n (oscillators)", self.n_spin)
         form.addRow("State space", self.space_combo)
         form.addRow("Model", self.model_combo)
         form.addRow("Curve", self.curve_combo)
+        form.addRow("Curve resolution", self.resolution_combo)
         form.addRow("omega dist.", self.omega_combo)
         form.addRow("Rotations", self.rotation_combo)
         form.addRow("Coupling", self.coupling_combo)
@@ -90,6 +95,7 @@ class ControlPanel(QWidget):
             self.space_combo,
             self.model_combo,
             self.curve_combo,
+            self.resolution_combo,
             self.omega_combo,
             self.rotation_combo,
             self.coupling_combo,
@@ -181,6 +187,7 @@ class ControlPanel(QWidget):
         branching: str | None = None,
         n: int | None = None,
         seed: int | None = None,
+        resolution: float | None = None,
     ) -> None:
         """Set several controls at once without emitting configChanged
         (the caller is expected to rebuild once afterwards)."""
@@ -204,6 +211,9 @@ class ControlPanel(QWidget):
                 self.n_spin.setValue(n)
             if seed is not None:
                 self.seed_spin.setValue(seed)
+            if resolution is not None:
+                nearest = min(RESOLUTION_CHOICES, key=lambda r: abs(r - resolution))
+                self.resolution_combo.setCurrentText(f"{nearest:g}x")
         finally:
             self._updating = False
 
@@ -223,6 +233,7 @@ class ControlPanel(QWidget):
             coupling=self.coupling_combo.currentText(),
             branching=self.branching_combo.currentText(),
             seed=self.seed_spin.value(),
+            resolution=float(self.resolution_combo.currentText().rstrip("x")),
         )
 
     def set_mode(self, mode: str) -> None:
@@ -243,6 +254,7 @@ class ControlPanel(QWidget):
             form = self._form
             form.setRowVisible(self.model_combo, bool(model_names))
             form.setRowVisible(self.curve_combo, mode in ("circle", "graph"))
+            form.setRowVisible(self.resolution_combo, mode in ("circle", "graph"))
             form.setRowVisible(self.omega_combo, mode in ("circle", "graph"))
             form.setRowVisible(self.rotation_combo, mode == "sphere")
             form.setRowVisible(self.coupling_combo, mode == "graph")

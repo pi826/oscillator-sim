@@ -18,10 +18,20 @@ R_ONE_THRESHOLD: float = 0.95
 # neighboring phases (nearly) collide, where the exact vector field diverges
 COT_CLIP: float = 100.0
 
+# --- curve sampling -----------------------------------------------------------
+# polyline samples for the displayed curve in S1 mode (before the GUI's
+# resolution multiplier)
+CURVE_DISPLAY_SAMPLES: int = 720
+# resolution multipliers offered in the GUI; the default is applied to both
+# the S1 display polyline and the graph-mode arclength sampling
+RESOLUTION_CHOICES: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0)
+DEFAULT_RESOLUTION: float = 2.0
+
 # --- graph mode -------------------------------------------------------------
 # number of samples used to detect self-intersections of the curve
 CURVE_DETECT_SAMPLES: int = 1024
 # number of samples per unit of curve parameter used for arclength tables
+# (before the resolution multiplier)
 CURVE_ARCLEN_SAMPLES: int = 4096
 # two crossing points closer than this (relative to curve diameter) are merged
 VERTEX_MERGE_TOL: float = 1e-3

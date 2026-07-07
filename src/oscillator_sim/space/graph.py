@@ -137,8 +137,11 @@ class MetricGraph(StateSpace):
     name = "Metric graph"
     placement_modes = ("uniform", "random")
 
-    def __init__(self, curve: Curve, rng: np.random.Generator) -> None:
+    def __init__(
+        self, curve: Curve, rng: np.random.Generator, resolution: float = 1.0
+    ) -> None:
         self.curve = curve
+        self.resolution = max(float(resolution), 0.1)
         self._build(curve)
         self._presample_reference(rng)
 
@@ -229,7 +232,7 @@ class MetricGraph(StateSpace):
     def _make_edge(
         self, index: int, u_lo: float, u_hi: float, v_lo: int | None, v_hi: int | None
     ) -> Edge:
-        m = max(8, int(np.ceil(CURVE_ARCLEN_SAMPLES * (u_hi - u_lo)))) + 1
+        m = max(8, int(np.ceil(CURVE_ARCLEN_SAMPLES * self.resolution * (u_hi - u_lo)))) + 1
         u = np.linspace(u_lo, u_hi, m)
         points = self.curve.point(np.mod(u, 1.0))
         seg = np.linalg.norm(np.diff(points, axis=0), axis=1)

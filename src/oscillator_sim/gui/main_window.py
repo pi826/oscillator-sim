@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..constants import DEFAULT_DT
+from ..constants import CURVE_DISPLAY_SAMPLES, DEFAULT_DT
 from ..core.graph_dynamics import GraphDynamics
 from ..core.observables import (
     classify_circle,
@@ -68,6 +68,7 @@ class LaunchOptions:
     seed: int | None = None
     speed: float | None = None
     fps: int | None = None
+    resolution: float | None = None
     play: bool = False
     viewer: bool = False
 
@@ -148,6 +149,7 @@ class MainWindow(QMainWindow):
             branching=launch.branching,
             n=launch.n,
             seed=launch.seed,
+            resolution=launch.resolution,
         )
         self._rebuild()
         if launch.speed is not None:
@@ -174,12 +176,13 @@ class MainWindow(QMainWindow):
             self.model = MODELS.get(cfg.model)(omega)
             dynamics = CircleDynamics(self.model)
             state = self.space.initial_states(cfg.n, rng, "random")
-            self.canvas2d.set_curves([self.space.curve_polyline()])
+            samples = int(CURVE_DISPLAY_SAMPLES * cfg.resolution)
+            self.canvas2d.set_curves([self.space.curve_polyline(samples)])
             self.status.set_series_name("r1")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "graph":
             curve = CURVES.get(cfg.curve)()
-            self.space = MetricGraph(curve, rng)
+            self.space = MetricGraph(curve, rng, resolution=cfg.resolution)
             omega = make_omega(cfg.omega_mode, cfg.n, rng)
             coupling = GRAPH_COUPLINGS.get(cfg.coupling)()
             branching = BRANCHING_RULES.get(cfg.branching)()
