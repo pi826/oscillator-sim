@@ -28,7 +28,14 @@ from PySide6.QtWidgets import (
 from ..constants import DEFAULT_N, DEFAULT_RESOLUTION, DEFAULT_SEED, RESOLUTION_CHOICES
 from ..core.omega import OMEGA_MODES, SPHERE_ROTATION_MODES
 from ..core.params import ParamSpec
-from ..registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS, SPHERE_MODELS
+from ..registry import (
+    BRANCHING_RULES,
+    CURVES,
+    GLUED_MODELS,
+    GRAPH_COUPLINGS,
+    MODELS,
+    SPHERE_MODELS,
+)
 
 
 @dataclass(frozen=True)
@@ -250,6 +257,7 @@ class ControlPanel(QWidget):
                 "circle": MODELS.names(),
                 "graph": [],
                 "sphere": SPHERE_MODELS.names(),
+                "glued": GLUED_MODELS.names(),
             }[mode]
             current = self.model_combo.currentText()
             self.model_combo.clear()
@@ -260,8 +268,8 @@ class ControlPanel(QWidget):
             form = self._form
             form.setRowVisible(self.model_combo, bool(model_names))
             form.setRowVisible(self.curve_combo, mode in ("circle", "graph"))
-            form.setRowVisible(self.resolution_combo, mode in ("circle", "graph"))
-            form.setRowVisible(self.omega_combo, mode in ("circle", "graph"))
+            form.setRowVisible(self.resolution_combo, mode in ("circle", "graph", "glued"))
+            form.setRowVisible(self.omega_combo, mode in ("circle", "graph", "glued"))
             form.setRowVisible(self.rotation_combo, mode == "sphere")
             form.setRowVisible(self.coupling_combo, mode == "graph")
             form.setRowVisible(self.branching_combo, mode == "graph")

@@ -155,11 +155,18 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     # import implementation modules so they register themselves
-    from .core import branching, coupling, models, sphere_models  # noqa: F401
+    from .core import branching, coupling, glued_models, models, sphere_models  # noqa: F401
     from .core.omega import OMEGA_MODES, SPHERE_ROTATION_MODES
     from .geometry import curves  # noqa: F401
     from .gui.main_window import _SPACE_MODES, LaunchOptions, MainWindow
-    from .registry import BRANCHING_RULES, CURVES, GRAPH_COUPLINGS, MODELS, SPHERE_MODELS
+    from .registry import (
+        BRANCHING_RULES,
+        CURVES,
+        GLUED_MODELS,
+        GRAPH_COUPLINGS,
+        MODELS,
+        SPHERE_MODELS,
+    )
 
     spaces = list(_SPACE_MODES)
     if ns.list:
@@ -171,6 +178,7 @@ def main() -> int:
             ("spaces", spaces),
             ("models (S1)", MODELS.names()),
             ("models (sphere)", SPHERE_MODELS.names()),
+            ("models (glued loops)", GLUED_MODELS.names()),
             ("curves", curve_names),
             ("couplings", GRAPH_COUPLINGS.names()),
             ("branching rules", BRANCHING_RULES.names()),
@@ -187,9 +195,9 @@ def main() -> int:
     # selected state space (a wrong-space --model would otherwise no-op
     # and a *different* simulation would run than the one asked for)
     for flag, value, allowed in (
-        ("model", ns.model, ("circle", "sphere")),
+        ("model", ns.model, ("circle", "sphere", "glued")),
         ("curve", ns.curve, ("circle", "graph")),
-        ("omega", ns.omega, ("circle", "graph")),
+        ("omega", ns.omega, ("circle", "graph", "glued")),
         ("rotation", ns.rotation, ("sphere",)),
         ("coupling", ns.coupling, ("graph",)),
         ("branching", ns.branching, ("graph",)),
@@ -218,7 +226,12 @@ def main() -> int:
             except ValueError:
                 raise SystemExit(f"--curve-param {item!r}: value must be a number")
 
-    model_choices = MODELS.names() if mode == "circle" else SPHERE_MODELS.names()
+    model_choices = {
+        "circle": MODELS.names(),
+        "graph": [],
+        "sphere": SPHERE_MODELS.names(),
+        "glued": GLUED_MODELS.names(),
+    }[mode]
     launch = LaunchOptions(
         space=space,
         model=_resolve("model", ns.model, model_choices),
