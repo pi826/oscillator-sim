@@ -87,50 +87,47 @@ class Incidence:
         return 1 if self.end == 0 else -1
 
 
-def _detect_crossings(curve: Curve) -> list[tuple[float, float]]:
-    """Find self-intersections; returns parameter pairs (u1, u2), u1 < u2."""
-    n = CURVE_DETECT_SAMPLES
+def _detect_crossings(curve: Curve) -> tuple[list[tuple[float, float]], int]:
+    """Find self-intersections; returns (parameter pairs (u1, u2) with
+    u1 < u2, sample count used). Pair tests run in row blocks so curves
+    with a high ``detect_samples`` stay within a bounded memory footprint.
+    """
+    n = int(getattr(curve, "detect_samples", CURVE_DETECT_SAMPLES))
     u = np.arange(n) / n
     p = curve.point(u)
     q = p[(np.arange(n) + 1) % n]
-    i_idx, j_idx = np.triu_indices(n, k=2)
-    # segments 0 and n-1 are neighbors around the parameter wrap
-    keep = ~((i_idx == 0) & (j_idx == n - 1))
-    i_idx, j_idx = i_idx[keep], j_idx[keep]
+    d_all = q - p
 
-    d1 = q[i_idx] - p[i_idx]
-    d2 = q[j_idx] - p[j_idx]
-    r = p[j_idx] - p[i_idx]
-    denom = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        t = (r[:, 0] * d2[:, 1] - r[:, 1] * d2[:, 0]) / denom
-        w = (r[:, 0] * d1[:, 1] - r[:, 1] * d1[:, 0]) / denom
-    # small slack so a crossing sitting exactly on a sample node (t or w
-    # rounding to just below 0 / just below 1) is not missed
-    eps = 1e-9
-    hit = (np.abs(denom) > 1e-15) & (t >= -eps) & (t < 1) & (w >= -eps) & (w < 1)
-    raw = [
-        (float(((i + ti) / n) % 1.0), float(((j + wi) / n) % 1.0))
-        for i, j, ti, wi in zip(i_idx[hit], j_idx[hit], t[hit], w[hit])
-    ]
-
-    # the slack can report one node crossing from several segment pairs:
-    # deduplicate by circular closeness of the parameter pairs
-    def circ(a: float, b: float) -> float:
-        d = abs(a - b) % 1.0
-        return min(d, 1.0 - d)
-
-    tol = 2.0 / n
-    kept: list[tuple[float, float]] = []
-    for u1, u2 in raw:
-        if any(
-            (circ(u1, v1) < tol and circ(u2, v2) < tol)
-            or (circ(u1, v2) < tol and circ(u2, v1) < tol)
-            for v1, v2 in kept
-        ):
+    raw: list[tuple[float, float]] = []
+    eps = 1e-9  # slack: crossings sitting exactly on a sample node
+    block = max(1, 2_000_000 // n)
+    for a in range(0, n - 1, block):
+        rows = np.arange(a, min(a + block, n - 1))
+        cols = np.arange(n)
+        big_i, big_j = np.meshgrid(rows, cols, indexing="ij")
+        # skip identical/adjacent segments (incl. the 0 / n-1 wrap pair)
+        mask = (big_j >= big_i + 2) & ~((big_i == 0) & (big_j == n - 1))
+        i_idx, j_idx = big_i[mask], big_j[mask]
+        if i_idx.size == 0:
             continue
-        kept.append((u1, u2))
-    return kept
+
+        d1 = d_all[i_idx]
+        d2 = d_all[j_idx]
+        r = p[j_idx] - p[i_idx]
+        denom = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = (r[:, 0] * d2[:, 1] - r[:, 1] * d2[:, 0]) / denom
+            w = (r[:, 0] * d1[:, 1] - r[:, 1] * d1[:, 0]) / denom
+        hit = (np.abs(denom) > 1e-15) & (t >= -eps) & (t < 1) & (w >= -eps) & (w < 1)
+        raw.extend(
+            (float(((i + ti) / n) % 1.0), float(((j + wi) / n) % 1.0))
+            for i, j, ti, wi in zip(i_idx[hit], j_idx[hit], t[hit], w[hit])
+        )
+
+    # duplicates (one node crossing reported by several segment pairs) are
+    # left in: the breakpoint parameter merge in the graph build removes
+    # them, and pair-level deduplication would cost O(hits^2)
+    return raw, n
 
 
 class MetricGraph(StateSpace):
@@ -148,31 +145,57 @@ class MetricGraph(StateSpace):
     # --- construction ------------------------------------------------------
 
     def _build(self, curve: Curve) -> None:
-        crossings = _detect_crossings(curve)
+        crossings, detect_n = _detect_crossings(curve)
 
-        # cluster crossing points into vertices
+        # cluster crossing points into vertices (grid hash: O(#crossings))
         pts = curve.point(np.array([c[0] for c in crossings])) if crossings else np.zeros((0, 2))
         diameter = float(np.ptp(curve.polyline(512), axis=0).max()) or 1.0
         tol = VERTEX_MERGE_TOL * diameter
         vertex_points: list[np.ndarray] = []
+        grid: dict[tuple[int, int], list[int]] = {}
         breakpoints: list[tuple[float, int]] = []  # (param, vertex id)
         for (u1, u2), point in zip(crossings, pts):
-            for k, vp in enumerate(vertex_points):
-                if np.linalg.norm(vp - point) <= tol:
-                    vid = k
+            cx, cy = int(point[0] // tol), int(point[1] // tol)
+            vid = -1
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for cand in grid.get((cx + dx, cy + dy), ()):
+                        if np.linalg.norm(vertex_points[cand] - point) <= tol:
+                            vid = cand
+                            break
+                    if vid >= 0:
+                        break
+                if vid >= 0:
                     break
-            else:
+            if vid < 0:
                 vid = len(vertex_points)
                 vertex_points.append(point)
+                grid.setdefault((cx, cy), []).append(vid)
             breakpoints.append((u1, vid))
             breakpoints.append((u2, vid))
         self.vertex_points = np.array(vertex_points) if vertex_points else np.zeros((0, 2))
         self.n_vertices = len(vertex_points)
 
+        # when more than two strands pass through the same point (e.g. all
+        # petals of a rose meeting at the origin), each strand's parameter
+        # appears once per counterpart strand: merge parameter duplicates
+        # so no zero-length edges are created
+        if breakpoints:
+            breakpoints.sort()
+            param_tol = 2.0 / detect_n
+            merged: list[tuple[float, int]] = []
+            for u_val, vid in breakpoints:
+                if merged and (u_val - merged[-1][0]) < param_tol:
+                    continue
+                merged.append((u_val, vid))
+            # the wrap pair: last param may equal the first one (mod 1)
+            if len(merged) >= 2 and (merged[0][0] + 1.0 - merged[-1][0]) < param_tol:
+                merged.pop()
+            breakpoints = merged
+
         # split the parameter circle into edges
         self.edges: list[Edge] = []
         if breakpoints:
-            breakpoints.sort()
             for k, (u_lo, v_lo) in enumerate(breakpoints):
                 if k + 1 < len(breakpoints):
                     u_hi, v_hi = breakpoints[k + 1]
