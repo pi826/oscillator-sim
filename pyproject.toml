@@ -5,7 +5,7 @@ description = "Interactive phase-oscillator simulator on S1, metric graphs, and 
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
-    { name = "ringoarerugi-", email = "148020887+r12357@users.noreply.github.com" }
+    { name = "pi826", email = "fefr628@gmail.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [

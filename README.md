@@ -14,7 +14,7 @@ overlay mode. GUI: PySide6 + pyqtgraph.*
 [uv](https://docs.astral.sh/uv/) と Python 3.11+ が必要です。
 
 ```
-git clone https://github.com/r12357/oscillator-sim.git
+git clone https://github.com/pi826/oscillator-sim.git
 cd oscillator-sim
 uv sync
 uv run python -m oscillator_sim
