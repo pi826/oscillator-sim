@@ -36,6 +36,7 @@ class Registry(Generic[T]):
 
 MODELS: Registry = Registry("oscillator model")
 SPHERE_MODELS: Registry = Registry("sphere model")
+GLUED_MODELS: Registry = Registry("glued-loop model")
 CURVES: Registry = Registry("curve")
 BRANCHING_RULES: Registry = Registry("branching rule")
 GRAPH_COUPLINGS: Registry = Registry("graph coupling")

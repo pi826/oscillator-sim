@@ -100,6 +100,36 @@ class CotangentNearestNeighborModel(OscillatorModel):
 
 
 @MODELS.register
+class CotangentAllToAllModel(OscillatorModel):
+    """Single-phase reduction of the glued-loops cotangent flow
+    (limacon_branching_kuramoto memo):
+    dtheta_i/dt = w*omega_i + (K/(2n)) sum_{j!=i} cot_eps(theta_i - theta_j).
+
+    The field is pi-periodic (theta and theta + pi are identified by the
+    interaction, i.e. the inner and outer loop copies of the local phase),
+    all-to-all, and regularized as cot_eps(x) = sin(x) cos(x)/(sin(x)^2 +
+    eps^2). w defaults to 0: the memo's pure flow with no drift.
+    """
+
+    name = "Cotangent (all-to-all, mod pi)"
+    params = {
+        "K": ParamSpec("K (coupling)", 1.0, -10.0, 10.0, 0.1),
+        "eps": ParamSpec("eps (regularization)", 0.05, 0.001, 1.0, 0.005),
+        "w": ParamSpec("w (omega scale)", 0.0, 0.0, 5.0, 0.1),
+    }
+
+    def dtheta(self, theta: np.ndarray, t: float) -> np.ndarray:
+        n = theta.size
+        if n < 2:
+            return self.values["w"] * self.omega
+        eps = self.values["eps"]
+        x = theta[:, None] - theta[None, :]
+        s, c = np.sin(x), np.cos(x)
+        f = s * c / (s * s + eps * eps)  # cot_eps; the j = i diagonal is 0
+        return self.values["w"] * self.omega + (self.values["K"] / (2.0 * n)) * f.sum(axis=1)
+
+
+@MODELS.register
 class KuramotoDaidoModel(OscillatorModel):
     """Two-harmonic Daido coupling:
     dtheta_i/dt = omega_i + (1/n) sum_j [K1 sin(d_ji) + K2 sin(2 d_ji)],
