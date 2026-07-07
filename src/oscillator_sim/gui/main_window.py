@@ -69,6 +69,8 @@ class LaunchOptions:
     speed: float | None = None
     fps: int | None = None
     resolution: float | None = None
+    #: parameter overrides for the launched curve, e.g. {"k": 5.0}
+    curve_params: dict[str, float] | None = None
     play: bool = False
     viewer: bool = False
     #: draw only the curve and oscillators on a fully transparent window
@@ -108,9 +110,13 @@ class MainWindow(QMainWindow):
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             self.canvas2d.set_transparent()
 
+        #: per-curve parameter overrides, kept across rebuilds
+        self._curve_overrides: dict[str, dict[str, float]] = {}
+
         self.controls.configChanged.connect(self._rebuild)
         self.controls.resetRequested.connect(self._rebuild)
         self.controls.paramChanged.connect(self._on_param)
+        self.controls.curveParamChanged.connect(self._on_curve_param)
         self.controls.playToggled.connect(self._on_play)
         self.controls.placementRequested.connect(self._on_place)
         self.canvas2d.addRequested.connect(self._on_add)
@@ -157,6 +163,8 @@ class MainWindow(QMainWindow):
             seed=launch.seed,
             resolution=launch.resolution,
         )
+        if launch.curve is not None and launch.curve_params:
+            self._curve_overrides[launch.curve] = dict(launch.curve_params)
         self._rebuild()
         if launch.speed is not None:
             self.controls.set_speed(launch.speed)
@@ -176,7 +184,7 @@ class MainWindow(QMainWindow):
         rng = np.random.default_rng(cfg.seed)
 
         if mode == "circle":
-            curve = CURVES.get(cfg.curve)()
+            curve = self._make_curve(cfg.curve)
             self.space = Circle(curve)
             omega = make_omega(cfg.omega_mode, cfg.n, rng)
             self.model = MODELS.get(cfg.model)(omega)
@@ -187,7 +195,7 @@ class MainWindow(QMainWindow):
             self.status.set_series_name("r1")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "graph":
-            curve = CURVES.get(cfg.curve)()
+            curve = self._make_curve(cfg.curve)
             self.space = MetricGraph(curve, rng, resolution=cfg.resolution)
             omega = make_omega(cfg.omega_mode, cfg.n, rng)
             coupling = GRAPH_COUPLINGS.get(cfg.coupling)()
@@ -211,9 +219,28 @@ class MainWindow(QMainWindow):
 
         self.sim = Simulation(dynamics, state, DEFAULT_DT, rng)
         self.controls.build_params(self.model.params, self.model.values)
+        if mode in ("circle", "graph"):
+            self.controls.build_curve_params(curve.params, curve.values)
+        else:
+            self.controls.build_curve_params({}, {})
         self.controls.set_time(0.0)
         self._accum = 0.0
         self._refresh(stepped=True)
+
+    def _make_curve(self, name: str):
+        """Instantiate a curve and apply this session's parameter overrides."""
+        curve = CURVES.get(name)()
+        for key, value in self._curve_overrides.get(name, {}).items():
+            if key in curve.values:
+                curve.set_param(key, value)
+        return curve
+
+    def _on_curve_param(self, name: str, value: float) -> None:
+        # curve parameters change the geometry itself, so the simulation
+        # is rebuilt (unlike model parameters, which apply live); deferred
+        # because the rebuild replaces the spin box that emitted the signal
+        self._curve_overrides.setdefault(self.cfg.curve, {})[name] = value
+        QTimer.singleShot(0, self._rebuild)
 
     # --- control callbacks ---------------------------------------------------
 

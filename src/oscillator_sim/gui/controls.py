@@ -48,6 +48,7 @@ class SimConfig:
 class ControlPanel(QWidget):
     configChanged = Signal()
     paramChanged = Signal(str, float)
+    curveParamChanged = Signal(str, float)
     playToggled = Signal(bool)
     resetRequested = Signal()
     placementRequested = Signal(str)
@@ -105,10 +106,15 @@ class ControlPanel(QWidget):
         self.n_spin.valueChanged.connect(self._emit_config_changed)
         self.seed_spin.valueChanged.connect(self._emit_config_changed)
 
-        # --- model parameters (auto-generated spin boxes) ---------------
+        # --- model / curve parameters (auto-generated spin boxes) --------
         self.param_group = QGroupBox("Model parameters")
         self._param_form = QFormLayout(self.param_group)
         layout.addWidget(self.param_group)
+
+        self.curve_param_group = QGroupBox("Curve parameters")
+        self._curve_param_form = QFormLayout(self.curve_param_group)
+        layout.addWidget(self.curve_param_group)
+        self.curve_param_group.setVisible(False)
 
         # --- speed (log slider: steps per frame) -------------------------
         self.speed_slider = QSlider(Qt.Orientation.Horizontal, minimum=0, maximum=80, value=40)
@@ -265,15 +271,33 @@ class ControlPanel(QWidget):
         finally:
             self._updating = False
 
-    def build_params(self, params: dict[str, ParamSpec], values: dict[str, float]) -> None:
-        """Regenerate one spin box per declared model parameter."""
-        while self._param_form.rowCount():
-            self._param_form.removeRow(0)
+    @staticmethod
+    def _fill_param_form(
+        form: QFormLayout,
+        params: dict[str, ParamSpec],
+        values: dict[str, float],
+        signal: Signal,
+    ) -> None:
+        while form.rowCount():
+            form.removeRow(0)
         for name, spec in params.items():
             box = QDoubleSpinBox(
-                minimum=spec.minimum, maximum=spec.maximum, singleStep=spec.step, decimals=3
+                minimum=spec.minimum,
+                maximum=spec.maximum,
+                singleStep=spec.step,
+                decimals=spec.decimals,
             )
             box.setValue(values[name])
-            box.valueChanged.connect(lambda v, key=name: self.paramChanged.emit(key, float(v)))
-            self._param_form.addRow(spec.label, box)
+            box.valueChanged.connect(lambda v, key=name: signal.emit(key, float(v)))
+            form.addRow(spec.label, box)
+
+    def build_params(self, params: dict[str, ParamSpec], values: dict[str, float]) -> None:
+        """Regenerate one spin box per declared model parameter."""
+        self._fill_param_form(self._param_form, params, values, self.paramChanged)
         self.param_group.setVisible(bool(params))
+
+    def build_curve_params(self, params: dict[str, ParamSpec], values: dict[str, float]) -> None:
+        """Regenerate one spin box per declared curve parameter (changing
+        one rebuilds the simulation, since the geometry changes)."""
+        self._fill_param_form(self._curve_param_form, params, values, self.curveParamChanged)
+        self.curve_param_group.setVisible(bool(params))

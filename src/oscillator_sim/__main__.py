@@ -32,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--space", help="state space: circle / graph / sphere")
     sim.add_argument("--model", help="oscillator model (S1) or sphere model")
     sim.add_argument("--curve", help="embedded curve, e.g. 'lissajous'")
+    sim.add_argument("--curve-param", action="append", metavar="NAME=VALUE",
+                     help="curve parameter override, e.g. --curve-param k=5 "
+                          "(repeatable; requires --curve)")
     sim.add_argument("--coupling", help="graph coupling function")
     sim.add_argument("--branching", help="graph branching rule")
     sim.add_argument("--omega", help="omega distribution: Identical / Normal")
@@ -160,11 +163,15 @@ def main() -> int:
 
     spaces = list(_SPACE_MODES)
     if ns.list:
+        curve_names = [
+            name + (f" [{', '.join(CURVES.get(name).params)}]" if CURVES.get(name).params else "")
+            for name in CURVES.names()
+        ]
         for kind, names in (
             ("spaces", spaces),
             ("models (S1)", MODELS.names()),
             ("models (sphere)", SPHERE_MODELS.names()),
-            ("curves", CURVES.names()),
+            ("curves", curve_names),
             ("couplings", GRAPH_COUPLINGS.names()),
             ("branching rules", BRANCHING_RULES.names()),
             ("omega modes", OMEGA_MODES),
@@ -190,11 +197,33 @@ def main() -> int:
         if value is not None and mode not in allowed:
             raise SystemExit(f"--{flag} does not apply to the '{mode}' state space")
 
+    curve = _resolve("curve", ns.curve, CURVES.names())
+
+    curve_params: dict[str, float] = {}
+    if ns.curve_param:
+        if curve is None:
+            raise SystemExit("--curve-param requires --curve")
+        valid = CURVES.get(curve).params
+        for item in ns.curve_param:
+            key, sep, raw_value = item.partition("=")
+            if not sep:
+                raise SystemExit(f"--curve-param {item!r}: expected NAME=VALUE")
+            if key not in valid:
+                choices = ", ".join(valid) if valid else "(none)"
+                raise SystemExit(
+                    f"--curve-param {key!r}: unknown for {curve}; parameters: {choices}"
+                )
+            try:
+                curve_params[key] = float(raw_value)
+            except ValueError:
+                raise SystemExit(f"--curve-param {item!r}: value must be a number")
+
     model_choices = MODELS.names() if mode == "circle" else SPHERE_MODELS.names()
     launch = LaunchOptions(
         space=space,
         model=_resolve("model", ns.model, model_choices),
-        curve=_resolve("curve", ns.curve, CURVES.names()),
+        curve=curve,
+        curve_params=curve_params or None,
         coupling=_resolve("coupling", ns.coupling, GRAPH_COUPLINGS.names()),
         branching=_resolve("branching", ns.branching, BRANCHING_RULES.names()),
         omega_mode=_resolve("omega", ns.omega, OMEGA_MODES),
