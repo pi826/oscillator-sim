@@ -52,8 +52,10 @@ class Canvas2D(pg.PlotWidget):
         self.hideAxis("bottom")
         self.hideAxis("left")
         self.setBackground("k")
-        # right click is "remove oscillator", not the pyqtgraph context menu
+        # right click is "remove oscillator", not the pyqtgraph context menu;
+        # the corner "A" button would re-enable auto-range (view wobble)
         self.getPlotItem().setMenuEnabled(False)
+        self.getPlotItem().hideButtons()
         self.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.PanMode)
         self.interactive = False
 

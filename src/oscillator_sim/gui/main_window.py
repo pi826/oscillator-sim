@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
@@ -116,10 +117,22 @@ class MainWindow(QMainWindow):
         self._timer.setInterval(FRAME_INTERVAL_MS)
         self._timer.timeout.connect(self._on_tick)
 
+        # application-wide shortcuts: plain keyPressEvent never fires after
+        # the GL canvas takes click-focus (GLViewWidget accepts key events
+        # without propagating them), which would leave a frameless viewer
+        # window without its documented quit key
+        for key, slot in ((Qt.Key.Key_Space, self._toggle_play), (Qt.Key.Key_Escape, self.close)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(slot)
+
         self._rebuild()
         if launch is not None:
             self._apply_launch(launch)
         self._timer.start()
+
+    def _toggle_play(self) -> None:
+        self.controls.set_playing(not self.controls.playing)
 
     def _apply_launch(self, launch: LaunchOptions) -> None:
         if launch.space is not None:
@@ -143,14 +156,6 @@ class MainWindow(QMainWindow):
             self._timer.setInterval(max(1000 // max(launch.fps, 1), 5))
         if launch.play:
             self.controls.set_playing(True)
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        if event.key() == Qt.Key.Key_Space:
-            self.controls.set_playing(not self.controls.playing)
-        elif event.key() == Qt.Key.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
 
     # --- simulation construction -----------------------------------------
 

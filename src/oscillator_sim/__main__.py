@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m oscillator_sim",
         description="Interactive phase-oscillator simulator (S1 / metric graph / S2).",
+        # abbreviations like --install would survive the exact-string filter
+        # in install_startup and get baked into the login command
+        allow_abbrev=False,
     )
     sim = parser.add_argument_group("initial configuration (names match fuzzily)")
     sim.add_argument("--space", help="state space: circle / graph / sphere")
@@ -77,7 +80,7 @@ def _startup_script_path() -> str:
 
 
 def _quote_cmd_arg(arg: str) -> str:
-    return f'"{arg}"' if any(ch in arg for ch in " ()") else arg
+    return f'"{arg}"' if any(ch in arg for ch in " ()&") else arg
 
 
 def install_startup(argv: list[str]) -> str:
@@ -97,7 +100,10 @@ def install_startup(argv: list[str]) -> str:
         + '", 0, False\r\n'
     )
     path = _startup_script_path()
-    with open(path, "w", encoding="utf-8") as fh:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # UTF-16 with BOM: wscript.exe reads it correctly even when the venv
+    # path contains non-ASCII characters (a UTF-8 .vbs would not be)
+    with open(path, "w", encoding="utf-16") as fh:
         fh.write(vbs)
     return path
 
@@ -137,10 +143,6 @@ def main() -> int:
         removed = uninstall_startup()
         print(f"removed {removed}" if removed else "no startup registration found")
         return 0
-    if ns.install_startup:
-        path = install_startup(sys.argv[1:])
-        print(f"registered for login startup: {path}")
-        return 0
 
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -168,7 +170,23 @@ def main() -> int:
         return 0
 
     space = _resolve("space", ns.space, spaces)
-    model_choices = MODELS.names() + SPHERE_MODELS.names()
+    mode = _SPACE_MODES[space] if space is not None else "circle"
+
+    # reject configuration flags that would be silently ignored in the
+    # selected state space (a wrong-space --model would otherwise no-op
+    # and a *different* simulation would run than the one asked for)
+    for flag, value, allowed in (
+        ("model", ns.model, ("circle", "sphere")),
+        ("curve", ns.curve, ("circle", "graph")),
+        ("omega", ns.omega, ("circle", "graph")),
+        ("rotation", ns.rotation, ("sphere",)),
+        ("coupling", ns.coupling, ("graph",)),
+        ("branching", ns.branching, ("graph",)),
+    ):
+        if value is not None and mode not in allowed:
+            raise SystemExit(f"--{flag} does not apply to the '{mode}' state space")
+
+    model_choices = MODELS.names() if mode == "circle" else SPHERE_MODELS.names()
     launch = LaunchOptions(
         space=space,
         model=_resolve("model", ns.model, model_choices),
@@ -184,6 +202,13 @@ def main() -> int:
         play=(ns.play or ns.viewer or ns.desktop or ns.wallpaper) and not ns.paused,
         viewer=ns.viewer or ns.desktop or ns.wallpaper,
     )
+
+    # register for login startup only after the names above validated, so a
+    # typo cannot get baked into a command that fails invisibly at login
+    if ns.install_startup:
+        path = install_startup(sys.argv[1:])
+        print(f"registered for login startup: {path}")
+        return 0
 
     app = QApplication(sys.argv)
     window = MainWindow(launch)
