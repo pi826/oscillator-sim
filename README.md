@@ -32,7 +32,9 @@ uv run python -m oscillator_sim --space graph --curve lissajous --viewer
 # デスクトップウィジェット風: 枠なし・最背面・タスクバー非表示
 uv run python -m oscillator_sim --space graph --curve lissajous --desktop --size 600x480 --pos 100,100
 
-# 壁紙風: 全画面・最背面・フォーカスを奪わない(デスクトップアイコンは隠れます)
+# 壁紙風: 全画面・最背面の「完全透過オーバーレイ」。曲線と振動子だけが
+# 描かれ、本来の壁紙とデスクトップアイコンはそのまま見え、クリックも
+# すべて透過します(アイコンは普通に操作可能)
 uv run python -m oscillator_sim --space graph --curve lissajous --wallpaper
 ```
 
@@ -40,10 +42,12 @@ uv run python -m oscillator_sim --space graph --curve lissajous --wallpaper
 から一時停止 / 終了できます(左クリックで再生/一時停止のトグル)。
 ターミナルから起動した場合は **Ctrl+C 一回**でも終了します。
 
-> 補足: 以前試みていた「壁紙レイヤー(アイコン背面)への埋め込み」は、
-> 新しめの Windows 11 ビルドでは Progman/WorkerW に注入した外部ウィンドウを
-> OS が画面合成しなくなったため表示されません(実測で確認)。そのため
-> `--wallpaper` は確実に表示される「全画面・最背面ウィンドウ」方式です。
+> 補足: 「壁紙レイヤー(アイコンの背面)への埋め込み」(WorkerW 方式)は、
+> 新しめの Windows 11 ビルド(24H2/25H2)では OS が外部ウィンドウを
+> 合成しなくなったため動作しません(Lively 等の専用アプリでも既知の問題。
+> 本機で実測確認済み)。そのため `--wallpaper` は「最背面の透過オーバー
+> レイ」方式です。曲線が通る画素だけはアイコンの上に重なりますが、
+> クリックは常に透過します。
 
 **ログイン時の自動起動**は、起動したいコマンドに `--install-startup` を
 付けて一度実行すると、スタートアップフォルダに登録されます

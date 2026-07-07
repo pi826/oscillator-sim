@@ -67,6 +67,18 @@ class Canvas2D(pg.PlotWidget):
         self.addItem(self._scatter)
         self.scene().sigMouseClicked.connect(self._on_click)
 
+    def set_transparent(self) -> None:
+        """Fully transparent background (wallpaper overlay mode): only the
+        curve and the oscillators are drawn. QGraphicsView needs the whole
+        recipe - brushless background alone still erases the viewport with
+        an opaque palette color."""
+        self.setBackground(None)
+        self.setStyleSheet("background: transparent")
+        for widget in (self, self.viewport()):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            widget.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+            widget.setAutoFillBackground(False)
+
     def set_curves(self, polylines: list[np.ndarray]) -> None:
         """Replace the drawn curve; one polyline per graph edge (or a single
         one in S1 mode)."""

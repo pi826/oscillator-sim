@@ -71,6 +71,9 @@ class LaunchOptions:
     resolution: float | None = None
     play: bool = False
     viewer: bool = False
+    #: draw only the curve and oscillators on a fully transparent window
+    #: (wallpaper mode: the real wallpaper and desktop icons stay visible)
+    transparent: bool = False
 
 
 class MainWindow(QMainWindow):
@@ -101,6 +104,9 @@ class MainWindow(QMainWindow):
         if self.viewer_mode:
             self._side.hide()
             layout.setContentsMargins(0, 0, 0, 0)
+        if launch is not None and launch.transparent:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.canvas2d.set_transparent()
 
         self.controls.configChanged.connect(self._rebuild)
         self.controls.resetRequested.connect(self._rebuild)

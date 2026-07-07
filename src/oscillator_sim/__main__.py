@@ -52,8 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
     win.add_argument("--desktop", action="store_true",
                      help="frameless, bottom-most, no taskbar entry (desktop widget)")
     win.add_argument("--wallpaper", action="store_true",
-                     help="fullscreen bottom-most background (covers the desktop icons; "
-                          "quit from the tray icon)")
+                     help="fullscreen transparent overlay at the bottom of the z-order: "
+                          "only the curve and oscillators are drawn, the real wallpaper "
+                          "and desktop icons stay visible, clicks pass through; quit "
+                          "from the tray icon")
     win.add_argument("--size", help="window size WxH, e.g. 900x700")
     win.add_argument("--pos", help="window position X,Y, e.g. 60,60")
     win.add_argument("--resolution", type=float, default=None,
@@ -204,6 +206,7 @@ def main() -> int:
         resolution=ns.resolution,
         play=(ns.play or ns.viewer or ns.desktop or ns.wallpaper) and not ns.paused,
         viewer=ns.viewer or ns.desktop or ns.wallpaper,
+        transparent=ns.wallpaper,
     )
 
     # register for login startup only after the names above validated, so a
@@ -224,8 +227,12 @@ def main() -> int:
     if ns.desktop or ns.wallpaper:
         flags |= Qt.WindowType.WindowStaysOnBottomHint | Qt.WindowType.Tool
     if ns.wallpaper:
-        # never take focus, so other windows always stay above
-        flags |= Qt.WindowType.WindowDoesNotAcceptFocus
+        # never take focus and let every click fall through to the desktop
+        # icons below
+        flags |= (
+            Qt.WindowType.WindowDoesNotAcceptFocus
+            | Qt.WindowType.WindowTransparentForInput
+        )
     if flags != Qt.WindowType.Window:
         window.setWindowFlags(flags)
 
