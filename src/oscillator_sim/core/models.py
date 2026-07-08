@@ -40,6 +40,25 @@ class OscillatorModel(Parameterized, ABC):
     def accel(self, theta: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
         raise NotImplementedError("only second-order models define accel()")
 
+    def on_add(self, theta: np.ndarray) -> None:
+        """Called after a new oscillator's phase is appended to theta.
+
+        Models that key auxiliary per-oscillator state off array index
+        (e.g. a frozen group label) override this to extend that state;
+        the base implementation is a no-op.
+        """
+
+    def on_remove(self, index: int) -> None:
+        """Called after oscillator `index` is removed from theta/omega."""
+
+    def on_replace(self, theta: np.ndarray) -> None:
+        """Called after theta is wholesale replaced (e.g. re-placement).
+
+        Models with auxiliary per-oscillator state derived from theta
+        (e.g. a frozen group label) override this to recompute it from
+        the new theta; the base implementation is a no-op.
+        """
+
 
 @MODELS.register
 class KuramotoModel(OscillatorModel):
@@ -247,6 +266,78 @@ class NonlocalRingModel(OscillatorModel):
         z = g @ np.exp(-1j * theta)
         lagged = np.exp(1j * (theta + self.values["alpha"]))
         return self.omega - self.values["K"] * np.imag(lagged * z)
+
+
+@MODELS.register
+class NFoldLocalPhaseKuramotoModel(OscillatorModel):
+    """n-fold local-phase Kuramoto model (n_fold_local_phase_kuramoto memo).
+
+    n equally spaced anchor points a_k = 2*pi*k/n partition S1. Each
+    oscillator is classified once, the first time it is seen, into the
+    group g_i of its nearest anchor; g_i is then frozen (it does not
+    change as theta_i evolves, only when a new oscillator is added or n is
+    changed). Coupling acts on the local phase x_i = theta_i - a_{g_i}
+    rather than on theta_i itself:
+
+    dx_i/dt = (K/n) sum_j sin(x_j - x_i)
+
+    Since theta_i = a_{g_i} + x_i with a_{g_i} constant, dtheta_i/dt =
+    dx_i/dt. The flow pulls every x_i to a common value c, so the
+    n-cluster configuration {a_k + c} is a rotating relative equilibrium
+    (the whole pattern may drift together); no restoring term is added,
+    so the overall rotation stays free, as in the memo's main case.
+    """
+
+    name = "n-fold local-phase Kuramoto"
+    params = {
+        "n": ParamSpec("n (equal division)", 3.0, 1.0, 32.0, 1.0, decimals=0),
+        "K": ParamSpec("K (coupling)", 1.0, -10.0, 10.0, 0.1),
+    }
+
+    def __init__(self, omega: np.ndarray) -> None:
+        super().__init__(omega)
+        self._group: np.ndarray | None = None
+        self._n_groups: int | None = None
+
+    @staticmethod
+    def _anchors(n_groups: int) -> np.ndarray:
+        return TWO_PI * np.arange(n_groups) / n_groups
+
+    def _classify(self, theta: np.ndarray, n_groups: int) -> np.ndarray:
+        anchors = self._anchors(n_groups)
+        diff = np.mod(theta[:, None] - anchors[None, :] + np.pi, TWO_PI) - np.pi
+        return np.argmin(np.abs(diff), axis=1)
+
+    def on_add(self, theta: np.ndarray) -> None:
+        """Classify the oscillator just appended to `theta` (index -1)."""
+        if self._group is None:
+            return
+        n_groups = max(1, int(round(self.values["n"])))
+        label = self._classify(theta[-1:], n_groups)
+        self._group = np.append(self._group, label)
+
+    def on_remove(self, index: int) -> None:
+        if self._group is None:
+            return
+        self._group = np.delete(self._group, index)
+
+    def on_replace(self, theta: np.ndarray) -> None:
+        """Force re-classification (e.g. after a placement-mode reset)."""
+        self._group = None
+
+    def dtheta(self, theta: np.ndarray, t: float) -> np.ndarray:
+        n_groups = max(1, int(round(self.values["n"])))
+        if (
+            self._group is None
+            or self._group.size != theta.size
+            or self._n_groups != n_groups
+        ):
+            self._group = self._classify(theta, n_groups)
+            self._n_groups = n_groups
+        n = theta.size
+        x = theta - self._anchors(n_groups)[self._group]
+        z = np.exp(1j * x).sum()
+        return (self.values["K"] / n) * np.imag(np.exp(-1j * x) * z)
 
 
 @MODELS.register

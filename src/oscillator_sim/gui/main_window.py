@@ -322,6 +322,8 @@ class MainWindow(QMainWindow):
             return
         n = self.space.count(self.sim.state)
         self.sim.state = self.space.initial_states(n, self.sim.rng, placement)
+        if hasattr(self.model, "on_replace"):
+            self.model.on_replace(self.sim.state)
         self._refresh(stepped=True)
 
     def _on_add(self, point: np.ndarray) -> None:
@@ -332,6 +334,8 @@ class MainWindow(QMainWindow):
         else:
             extra = make_omega(self.cfg.omega_mode, 1, self.sim.rng)
             self.model.omega = np.append(self.model.omega, extra)
+            if hasattr(self.model, "on_add"):
+                self.model.on_add(self.sim.state)
         self._refresh(stepped=True)
 
     def _on_remove(self, point: np.ndarray) -> None:
@@ -346,6 +350,8 @@ class MainWindow(QMainWindow):
             self.model.rotations = np.delete(self.model.rotations, index, axis=0)
         else:
             self.model.omega = np.delete(self.model.omega, index)
+            if hasattr(self.model, "on_remove"):
+                self.model.on_remove(index)
         self._refresh(stepped=True)
 
     # --- frame loop --------------------------------------------------------
