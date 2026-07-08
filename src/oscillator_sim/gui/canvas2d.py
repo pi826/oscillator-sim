@@ -34,6 +34,14 @@ def sigma_brushes(sigma: np.ndarray) -> list[QColor]:
     return [pos if s > 0 else neg for s in sigma]
 
 
+def loop_brushes(loop: np.ndarray, n_loops: int) -> list[QColor]:
+    """One color per loop: warm/cool for two loops, a hue wheel otherwise."""
+    if n_loops <= 2:
+        return sigma_brushes(np.where(np.asarray(loop) == 0, 1, -1))
+    palette = [QColor.fromHsvF(k / n_loops, 0.9, 1.0) for k in range(n_loops)]
+    return [palette[int(k) % n_loops] for k in loop]
+
+
 def polarization_color(p: float) -> QColor:
     """Diverging map for p in [-1, 1]: blue (-1) - gray (0) - red (+1)."""
     p = float(np.clip(p, -1.0, 1.0))

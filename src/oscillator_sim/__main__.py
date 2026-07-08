@@ -196,7 +196,7 @@ def main() -> int:
     # and a *different* simulation would run than the one asked for)
     for flag, value, allowed in (
         ("model", ns.model, ("circle", "sphere", "glued")),
-        ("curve", ns.curve, ("circle", "graph")),
+        ("curve", ns.curve, ("circle", "graph", "glued")),
         ("omega", ns.omega, ("circle", "graph", "glued")),
         ("rotation", ns.rotation, ("sphere",)),
         ("coupling", ns.coupling, ("graph",)),

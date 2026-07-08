@@ -95,16 +95,19 @@ class GluedCotangent(GluedLoopModel):
 class GluedDynamics(Dynamics):
     """RK4 on alpha (loops frozen within the step), then the stochastic
     boundary condition: any oscillator that passed the glue point alpha = 0
-    in either direction has its loop redrawn with probability 1/2 each."""
+    in either direction has its loop redrawn uniformly from the m loops
+    (probability 1/m each; the memo's 1/2-1/2 rule for m = 2)."""
 
     def __init__(
         self,
         model: GluedLoopModel,
         rng: np.random.Generator,
+        n_loops: int = 2,
         stepper: Stepper | None = None,
     ) -> None:
         self.model = model
         self.rng = rng
+        self.n_loops = int(n_loops)
         self.stepper: Stepper = stepper if stepper is not None else RK4Stepper()
 
     def step(self, state: GluedState, t: float, dt: float) -> GluedState:
@@ -117,5 +120,5 @@ class GluedDynamics(Dynamics):
         crossed = (alpha >= TWO_PI) | (alpha < 0.0)
         new_loop = loop.copy()
         if crossed.any():
-            new_loop[crossed] = self.rng.integers(0, 2, size=int(crossed.sum()))
+            new_loop[crossed] = self.rng.integers(0, self.n_loops, size=int(crossed.sum()))
         return GluedState(new_loop, np.mod(alpha, TWO_PI))

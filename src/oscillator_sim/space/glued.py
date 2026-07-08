@@ -1,14 +1,16 @@
-"""Two loops of a self-intersecting limacon glued at the crossing point.
+"""Loops of a self-intersecting curve glued at a single crossing point.
 
-Following the limacon_branching_kuramoto memo: the limacon r = b + cos(phi)
-(b < 1) splits at its self-intersection into an inner and an outer loop.
-Rather than the planar curve, the state space is the pair
+Generalizes the limacon_branching_kuramoto memo: any curve whose
+self-intersections form ONE vertex through which every arc closes into a
+loop (a bouquet of circles) qualifies - the limacon (b < 1, two loops),
+the figure eight (two loops), and the rose (k petals for odd k, 2k for
+even k). The state is
 
-    (loop in {inner=0, outer=1}, local phase alpha in [0, 2*pi))
+    (loop in {0..m-1}, local phase alpha in [0, 2*pi))
 
 where alpha runs once around the respective loop and alpha = 0 is the
-crossing point on both loops. For display, alpha is mapped to the loop
-proportionally to arclength, so equal phase speed looks uniform on screen.
+common crossing point on every loop. For display, alpha is mapped to the
+loop proportionally to arclength.
 """
 
 from __future__ import annotations
@@ -18,17 +20,14 @@ from dataclasses import dataclass
 import numpy as np
 
 from .base import StateSpace
+from .graph import MetricGraph
 
 TWO_PI = 2.0 * np.pi
-
-# maximum b: beyond 1 the inner loop (and the crossing) disappears
-_B_MAX = 0.95
-_ARC_SAMPLES = 1024  # per loop, before the resolution multiplier
 
 
 @dataclass
 class GluedState:
-    loop: np.ndarray  # (n,) int64, 0 = inner, 1 = outer
+    loop: np.ndarray  # (n,) int64 in {0..m-1}
     alpha: np.ndarray  # (n,) float64 in [0, 2*pi)
 
     def copy(self) -> "GluedState":
@@ -39,80 +38,58 @@ class GluedState:
         return int(self.loop.size)
 
 
-class _Arc:
-    """Arclength-parameterized piece of the limacon."""
-
-    def __init__(self, curve, u_lo: float, u_hi: float, samples: int) -> None:
-        u = np.linspace(u_lo, u_hi, samples)
-        self.points = curve.point(np.mod(u, 1.0))
-        seg = np.linalg.norm(np.diff(self.points, axis=0), axis=1)
-        self.arclens = np.concatenate([[0.0], np.cumsum(seg)])
-        self.length = float(self.arclens[-1])
-
-    def at(self, alpha: np.ndarray) -> np.ndarray:
-        s = np.mod(alpha, TWO_PI) / TWO_PI * self.length
-        x = np.interp(s, self.arclens, self.points[:, 0])
-        y = np.interp(s, self.arclens, self.points[:, 1])
-        return np.stack([x, y], axis=-1)
-
-
 class GluedLoops(StateSpace):
-    name = "Glued loops (Limacon)"
+    name = "Glued loops"
     placement_modes = ("uniform", "random")
 
     def __init__(self, curve, resolution: float = 1.0) -> None:
-        """``curve`` must be a Limacon-style curve with a ``b`` parameter;
-        b is clamped below 1 so the self-intersection exists."""
-        b = min(float(curve.values["b"]), _B_MAX)
-        curve.set_param("b", b)
+        graph = MetricGraph(curve, np.random.default_rng(0), resolution=resolution)
+        if graph.n_vertices != 1 or any(e.v_start != e.v_end for e in graph.edges):
+            raise ValueError(
+                "glued-loops mode needs a curve whose self-intersections form a "
+                "single point with every arc closing into a loop through it "
+                "(e.g. Limacon with b < 1, Figure eight, Rose)"
+            )
         self.curve = curve
-        # r = b + cos(phi) vanishes at phi0 = arccos(-b); the inner loop is
-        # the r < 0 stretch phi in (phi0, 2*pi - phi0)
-        u0 = float(np.arccos(-b)) / TWO_PI
-        m = max(64, int(_ARC_SAMPLES * resolution))
-        self._arcs = [
-            _Arc(curve, u0, 1.0 - u0, m),  # 0: inner
-            _Arc(curve, 1.0 - u0, 1.0 + u0, m),  # 1: outer
-        ]
+        self._graph = graph
+        self._edges = graph.edges
+        self.n_loops = len(graph.edges)
 
     def polylines(self) -> list[np.ndarray]:
-        return [arc.points for arc in self._arcs]
+        return [edge.points for edge in self._edges]
 
-    def loop_lengths(self) -> tuple[float, float]:
-        return self._arcs[0].length, self._arcs[1].length
+    def loop_lengths(self) -> list[float]:
+        return [edge.length for edge in self._edges]
 
     # --- StateSpace interface ------------------------------------------------
 
     def initial_states(self, n: int, rng: np.random.Generator, mode: str) -> GluedState:
         if mode == "uniform":
             alpha = TWO_PI * np.arange(n) / max(n, 1)
-            loop = (np.arange(n) % 2).astype(np.int64)
+            loop = (np.arange(n) % self.n_loops).astype(np.int64)
         elif mode == "random":
             alpha = rng.uniform(0.0, TWO_PI, size=n)
-            loop = rng.integers(0, 2, size=n).astype(np.int64)
+            loop = rng.integers(0, self.n_loops, size=n).astype(np.int64)
         else:
             raise ValueError(f"unknown placement mode {mode!r}")
         return GluedState(loop, alpha)
 
     def positions(self, states: GluedState) -> np.ndarray:
         out = np.zeros((states.n, 2))
-        for k in (0, 1):
+        for k, edge in enumerate(self._edges):
             mask = states.loop == k
             if mask.any():
-                out[mask] = self._arcs[k].at(states.alpha[mask])
+                s = np.mod(states.alpha[mask], TWO_PI) / TWO_PI * edge.length
+                out[mask] = edge.point_at(s)
         return out
 
     def add_at(self, states: GluedState, point: np.ndarray, rng: np.random.Generator) -> GluedState:
-        best: tuple[float, int, float] | None = None
-        for k, arc in enumerate(self._arcs):
-            d = np.linalg.norm(arc.points - point[:2], axis=1)
-            i = int(np.argmin(d))
-            alpha = TWO_PI * arc.arclens[i] / arc.length
-            if best is None or d[i] < best[0]:
-                best = (float(d[i]), k, float(alpha % TWO_PI))
-        assert best is not None
+        graph = self._graph
+        i = int(np.argmin(np.linalg.norm(graph._lookup - point[:2], axis=1)))
+        loop = int(graph._lookup_edge[i])
+        alpha = TWO_PI * float(graph._lookup_s[i]) / self._edges[loop].length
         return GluedState(
-            np.append(states.loop, best[1]), np.append(states.alpha, best[2])
+            np.append(states.loop, loop), np.append(states.alpha, alpha % TWO_PI)
         )
 
     def remove_index(self, states: GluedState, index: int) -> GluedState:

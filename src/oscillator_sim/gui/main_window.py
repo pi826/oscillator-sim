@@ -46,7 +46,7 @@ from ..space.circle import Circle
 from ..space.glued import GluedLoops
 from ..space.graph import MetricGraph
 from ..space.sphere import Sphere
-from .canvas2d import Canvas2D, phase_brushes, sigma_brushes
+from .canvas2d import Canvas2D, loop_brushes, phase_brushes, sigma_brushes
 from .canvas3d import Canvas3D, direction_colors
 from .controls import ControlPanel
 from .status_panel import StatusPanel
@@ -221,13 +221,27 @@ class MainWindow(QMainWindow):
             self.status.set_series_name("U")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "glued":
-            curve = CURVES.get("Limacon")()
-            overrides = self._curve_overrides.get("Limacon", {})
-            curve.set_param("b", overrides.get("b", _GLUED_DEFAULT_B))
-            self.space = GluedLoops(curve, resolution=cfg.resolution)
+            curve_name = cfg.curve
+            curve = self._make_curve(curve_name)
+            if curve_name == "Limacon" and "b" not in self._curve_overrides.get("Limacon", {}):
+                curve.set_param("b", _GLUED_DEFAULT_B)
+            try:
+                self.space = GluedLoops(curve, resolution=cfg.resolution)
+                self._glued_note = ""
+            except ValueError:
+                # fall back to the memo's limacon when the chosen curve does
+                # not decompose into loops glued at a single point
+                curve_name = "Limacon"
+                curve = self._make_curve("Limacon")
+                if "b" not in self._curve_overrides.get("Limacon", {}):
+                    curve.set_param("b", _GLUED_DEFAULT_B)
+                self.space = GluedLoops(curve, resolution=cfg.resolution)
+                self._glued_note = (
+                    f"'{cfg.curve}' is not a single-point loop bouquet; using Limacon"
+                )
             omega = make_omega(cfg.omega_mode, cfg.n, rng)
             self.model = GLUED_MODELS.get(cfg.model)(omega)
-            dynamics = GluedDynamics(self.model, rng)
+            dynamics = GluedDynamics(self.model, rng, n_loops=self.space.n_loops)
             state = self.space.initial_states(cfg.n, rng, "random")
             self.canvas2d.set_curves(self.space.polylines())
             self.status.set_series_name("r_alpha")
@@ -246,7 +260,7 @@ class MainWindow(QMainWindow):
         self.sim = Simulation(dynamics, state, DEFAULT_DT, rng)
         self.controls.build_params(self.model.params, self.model.values)
         if mode in ("circle", "graph", "glued"):
-            self._active_curve_name = cfg.curve if mode != "glued" else "Limacon"
+            self._active_curve_name = curve_name if mode == "glued" else cfg.curve
             self.controls.build_curve_params(curve.params, curve.values)
         else:
             self._active_curve_name = None
@@ -360,25 +374,26 @@ class MainWindow(QMainWindow):
                 pol_text = ", ".join(f"e{k}: {p:+.2f}" for k, p in enumerate(pol))
                 self.status.set_extra(f"KS = {ks:.3f}\npolarization: {pol_text}")
         elif self.mode == "glued":
-            # inner loop drawn warm, outer loop cool (same palette as the
-            # graph mode's direction coloring)
-            sigma_like = np.where(state.loop == 0, 1, -1)
-            self.canvas2d.set_points(self.space.positions(state), sigma_brushes(sigma_like))
+            m = self.space.n_loops
+            self.canvas2d.set_points(self.space.positions(state), loop_brushes(state.loop, m))
             if not show_status:
                 return
             r_alpha = order_parameter(state.alpha)
             if stepped:
                 self.status.append(self.sim.t, r_alpha)
                 self.status.redraw()
-            n_inner = int((state.loop == 0).sum())
-            self.status.set_classification(f"inner {n_inner} / outer {state.n - n_inner}")
-            inner = state.alpha[state.loop == 0]
-            outer = state.alpha[state.loop == 1]
-            self.status.set_extra(
-                f"r_alpha = {r_alpha:.3f}\n"
-                f"r_inner = {order_parameter(inner):.3f}, "
-                f"r_outer = {order_parameter(outer):.3f}"
-            )
+            counts = np.bincount(state.loop, minlength=m)
+            self.status.set_classification("loops: " + " / ".join(str(c) for c in counts))
+            lines = [f"r_alpha = {r_alpha:.3f}"]
+            if m <= 4:
+                per_loop = ", ".join(
+                    f"r{k} = {order_parameter(state.alpha[state.loop == k]):.3f}"
+                    for k in range(m)
+                )
+                lines.append(per_loop)
+            if self._glued_note:
+                lines.append(self._glued_note)
+            self.status.set_extra("\n".join(lines))
         elif self.mode == "sphere":
             self.canvas3d.set_points(state, direction_colors(state))
             if not show_status:

@@ -267,7 +267,7 @@ class ControlPanel(QWidget):
 
             form = self._form
             form.setRowVisible(self.model_combo, bool(model_names))
-            form.setRowVisible(self.curve_combo, mode in ("circle", "graph"))
+            form.setRowVisible(self.curve_combo, mode in ("circle", "graph", "glued"))
             form.setRowVisible(self.resolution_combo, mode in ("circle", "graph", "glued"))
             form.setRowVisible(self.omega_combo, mode in ("circle", "graph", "glued"))
             form.setRowVisible(self.rotation_combo, mode == "sphere")
