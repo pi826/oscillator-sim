@@ -34,12 +34,35 @@ def sigma_brushes(sigma: np.ndarray) -> list[QColor]:
     return [pos if s > 0 else neg for s in sigma]
 
 
-def loop_brushes(loop: np.ndarray, n_loops: int) -> list[QColor]:
-    """One color per loop: warm/cool for two loops, a hue wheel otherwise."""
+def loop_colors(n_loops: int) -> list[QColor]:
+    """Palette used for loops/arcs: warm/cool for two, a hue wheel otherwise."""
     if n_loops <= 2:
-        return sigma_brushes(np.where(np.asarray(loop) == 0, 1, -1))
-    palette = [QColor.fromHsvF(k / n_loops, 0.9, 1.0) for k in range(n_loops)]
+        return [QColor(*SIGMA_POS_COLOR), QColor(*SIGMA_NEG_COLOR)][:n_loops]
+    return [QColor.fromHsvF(k / n_loops, 0.9, 1.0) for k in range(n_loops)]
+
+
+def loop_brushes(loop: np.ndarray, n_loops: int) -> list[QColor]:
+    """One color per loop/arc index."""
+    palette = loop_colors(n_loops)
     return [palette[int(k) % n_loops] for k in loop]
+
+
+def _arrow_pose(line: np.ndarray) -> tuple[np.ndarray, float]:
+    """Midpoint (by arclength) of a polyline and the ArrowItem angle that
+    points along the direction of travel there.
+
+    ArrowItem's angle-0 arrow points left and rotations are applied in
+    Qt's y-down item space, so a data-space tangent (dx, dy) needs
+    angle = 180 - atan2(dy, dx) in degrees.
+    """
+    seg = np.linalg.norm(np.diff(line, axis=0), axis=1)
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    i = int(np.clip(np.searchsorted(cum, cum[-1] / 2.0), 1, len(line) - 1))
+    d = line[i] - line[i - 1]
+    if np.linalg.norm(d) == 0.0:
+        d = np.array([1.0, 0.0])
+    angle = 180.0 - float(np.degrees(np.arctan2(d[1], d[0])))
+    return line[i], angle
 
 
 def polarization_color(p: float) -> QColor:
@@ -70,6 +93,7 @@ class Canvas2D(pg.PlotWidget):
         self.interactive = False
 
         self._edge_items: list[pg.PlotDataItem] = []
+        self._arrow_items: list[pg.ArrowItem] = []
         self._pol_cache: np.ndarray | None = None
         self._scatter = pg.ScatterPlotItem(pen=None, size=12)
         self.addItem(self._scatter)
@@ -87,12 +111,20 @@ class Canvas2D(pg.PlotWidget):
             widget.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
             widget.setAutoFillBackground(False)
 
-    def set_curves(self, polylines: list[np.ndarray]) -> None:
+    def set_curves(
+        self,
+        polylines: list[np.ndarray],
+        show_arrows: bool = False,
+        arrow_colors: list[QColor] | None = None,
+    ) -> None:
         """Replace the drawn curve; one polyline per graph edge (or a single
-        one in S1 mode)."""
-        for item in self._edge_items:
+        one in S1 mode). With ``show_arrows``, one arrowhead per polyline
+        marks the arc's orientation (direction of increasing s / alpha) at
+        its arclength midpoint."""
+        for item in self._edge_items + self._arrow_items:
             self.removeItem(item)
         self._edge_items = []
+        self._arrow_items = []
         self._pol_cache = None
         for line in polylines:
             item = pg.PlotDataItem(
@@ -101,6 +133,22 @@ class Canvas2D(pg.PlotWidget):
             self.addItem(item)
             item.setZValue(-1)
             self._edge_items.append(item)
+        if show_arrows:
+            for k, line in enumerate(polylines):
+                pos, angle = _arrow_pose(line)
+                color = arrow_colors[k] if arrow_colors else QColor(235, 235, 235)
+                arrow = pg.ArrowItem(
+                    angle=angle,
+                    headLen=15,
+                    tipAngle=32,
+                    brush=color,
+                    pen=pg.mkPen(QColor(0, 0, 0, 140), width=1),
+                    pxMode=True,
+                )
+                arrow.setPos(float(pos[0]), float(pos[1]))
+                arrow.setZValue(-0.5)
+                self.addItem(arrow)
+                self._arrow_items.append(arrow)
         self._fix_view_range(polylines)
 
     def _fix_view_range(self, polylines: list[np.ndarray]) -> None:

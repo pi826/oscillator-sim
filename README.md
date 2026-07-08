@@ -300,6 +300,10 @@ uv run python -m oscillator_sim --space glued --curve rose --curve-param k=5 -n 
 - どの曲線でも使えます(トレフォイル: 6 弧、リサージュ (3,2): 14 弧、
   交差なしの曲線は 1 弧の自己ラップ)。点の色は弧ごとの色相環、
   パネルには弧の占有状況と r_α(t)。
+- **向き付けの表示**: 各弧の弧長中点に、その弧の向き(α / s の増加方向)
+  を示す矢印を描画します。貼り合わせループ・Arc phases モードでは
+  ループ/弧と同色、グラフモードでは灰色の矢印です(グラフモードの
+  σ = +1(暖色)は矢印の方向への進行を意味します)。
 
 ```
 uv run python -m oscillator_sim --space arc --curve trefoil -n 60 --play

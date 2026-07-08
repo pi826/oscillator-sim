@@ -47,7 +47,7 @@ from ..space.circle import Circle
 from ..space.glued import GluedLoops
 from ..space.graph import MetricGraph
 from ..space.sphere import Sphere
-from .canvas2d import Canvas2D, loop_brushes, phase_brushes, sigma_brushes
+from .canvas2d import Canvas2D, loop_brushes, loop_colors, phase_brushes, sigma_brushes
 from .canvas3d import Canvas3D, direction_colors
 from .controls import ControlPanel
 from .status_panel import StatusPanel
@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
             self.model = GraphDynamics(self.space, omega, coupling, branching, rng)
             dynamics = self.model
             state = self.space.initial_states(cfg.n, rng, "random")
-            self.canvas2d.set_curves([e.points for e in self.space.edges])
+            self.canvas2d.set_curves([e.points for e in self.space.edges], show_arrows=True)
             self.status.set_series_name("U")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "glued":
@@ -245,7 +245,11 @@ class MainWindow(QMainWindow):
             self.model = GLUED_MODELS.get(cfg.model)(omega)
             dynamics = GluedDynamics(self.model, rng, n_loops=self.space.n_loops)
             state = self.space.initial_states(cfg.n, rng, "random")
-            self.canvas2d.set_curves(self.space.polylines())
+            self.canvas2d.set_curves(
+                self.space.polylines(),
+                show_arrows=True,
+                arrow_colors=loop_colors(self.space.n_loops),
+            )
             self.status.set_series_name("r_alpha")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "arcs":
@@ -257,7 +261,11 @@ class MainWindow(QMainWindow):
                 self.model, rng, self.space.forward_targets, self.space.backward_targets
             )
             state = self.space.initial_states(cfg.n, rng, "random")
-            self.canvas2d.set_curves(self.space.polylines())
+            self.canvas2d.set_curves(
+                self.space.polylines(),
+                show_arrows=True,
+                arrow_colors=loop_colors(self.space.n_arcs),
+            )
             self.status.set_series_name("r_alpha")
             self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "sphere":
