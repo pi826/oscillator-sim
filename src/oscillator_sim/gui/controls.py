@@ -258,6 +258,7 @@ class ControlPanel(QWidget):
                 "graph": [],
                 "sphere": SPHERE_MODELS.names(),
                 "glued": GLUED_MODELS.names(),
+                "arcs": GLUED_MODELS.names(),
             }[mode]
             current = self.model_combo.currentText()
             self.model_combo.clear()
@@ -267,9 +268,9 @@ class ControlPanel(QWidget):
 
             form = self._form
             form.setRowVisible(self.model_combo, bool(model_names))
-            form.setRowVisible(self.curve_combo, mode in ("circle", "graph", "glued"))
-            form.setRowVisible(self.resolution_combo, mode in ("circle", "graph", "glued"))
-            form.setRowVisible(self.omega_combo, mode in ("circle", "graph", "glued"))
+            form.setRowVisible(self.curve_combo, mode in ("circle", "graph", "glued", "arcs"))
+            form.setRowVisible(self.resolution_combo, mode in ("circle", "graph", "glued", "arcs"))
+            form.setRowVisible(self.omega_combo, mode in ("circle", "graph", "glued", "arcs"))
             form.setRowVisible(self.rotation_combo, mode == "sphere")
             form.setRowVisible(self.coupling_combo, mode == "graph")
             form.setRowVisible(self.branching_combo, mode == "graph")

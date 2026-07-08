@@ -92,6 +92,49 @@ class GluedCotangent(GluedLoopModel):
         return self.values["w"] * self.omega + (self._k_matrix(loop) * f).sum(axis=1) / n
 
 
+class ArcDynamics(Dynamics):
+    """Per-arc local phases on a general curve graph (any number of
+    crossings). RK4 on alpha with the arc labels frozen within the step
+    (K_same / K_cross of the glued models distinguish same-arc from
+    cross-arc pairs), then the stochastic vertex transition: passing
+    alpha = 2*pi moves the oscillator uniformly onto one of the arcs
+    leaving the end vertex; exiting backward through alpha = 0 moves it
+    uniformly onto one of the arcs arriving at the start vertex. The
+    phase overshoot is carried onto the new arc (alpha mod 2*pi)."""
+
+    def __init__(
+        self,
+        model: GluedLoopModel,
+        rng: np.random.Generator,
+        forward_targets: list[np.ndarray],
+        backward_targets: list[np.ndarray],
+        stepper: Stepper | None = None,
+    ) -> None:
+        self.model = model
+        self.rng = rng
+        self.forward_targets = forward_targets
+        self.backward_targets = backward_targets
+        self.stepper: Stepper = stepper if stepper is not None else RK4Stepper()
+
+    def step(self, state, t: float, dt: float):
+        from ..space.arcs import ArcState
+
+        labels = state.edge
+
+        def f(alpha: np.ndarray, t_: float) -> np.ndarray:
+            return self.model.dalpha(alpha, labels, t_)
+
+        alpha = self.stepper.step(f, state.alpha, t, dt)
+        new_edge = state.edge.copy()
+        for i in np.flatnonzero(alpha >= TWO_PI):
+            targets = self.forward_targets[int(state.edge[i])]
+            new_edge[i] = targets[int(self.rng.integers(targets.size))]
+        for i in np.flatnonzero(alpha < 0.0):
+            targets = self.backward_targets[int(state.edge[i])]
+            new_edge[i] = targets[int(self.rng.integers(targets.size))]
+        return ArcState(new_edge, np.mod(alpha, TWO_PI))
+
+
 class GluedDynamics(Dynamics):
     """RK4 on alpha (loops frozen within the step), then the stochastic
     boundary condition: any oscillator that passed the glue point alpha = 0

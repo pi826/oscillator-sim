@@ -195,9 +195,9 @@ def main() -> int:
     # selected state space (a wrong-space --model would otherwise no-op
     # and a *different* simulation would run than the one asked for)
     for flag, value, allowed in (
-        ("model", ns.model, ("circle", "sphere", "glued")),
-        ("curve", ns.curve, ("circle", "graph", "glued")),
-        ("omega", ns.omega, ("circle", "graph", "glued")),
+        ("model", ns.model, ("circle", "sphere", "glued", "arcs")),
+        ("curve", ns.curve, ("circle", "graph", "glued", "arcs")),
+        ("omega", ns.omega, ("circle", "graph", "glued", "arcs")),
         ("rotation", ns.rotation, ("sphere",)),
         ("coupling", ns.coupling, ("graph",)),
         ("branching", ns.branching, ("graph",)),
@@ -231,6 +231,7 @@ def main() -> int:
         "graph": [],
         "sphere": SPHERE_MODELS.names(),
         "glued": GLUED_MODELS.names(),
+        "arcs": GLUED_MODELS.names(),
     }[mode]
     launch = LaunchOptions(
         space=space,

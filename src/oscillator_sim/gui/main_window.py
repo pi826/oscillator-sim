@@ -30,7 +30,7 @@ from ..core.observables import (
     sphere_order_parameter,
     uniformity,
 )
-from ..core.glued_models import GluedDynamics
+from ..core.glued_models import ArcDynamics, GluedDynamics
 from ..core.omega import make_omega, make_rotations
 from ..core.simulation import CircleDynamics, Simulation
 from ..core.sphere_models import SphereDynamics
@@ -42,6 +42,7 @@ from ..registry import (
     MODELS,
     SPHERE_MODELS,
 )
+from ..space.arcs import ArcPhases
 from ..space.circle import Circle
 from ..space.glued import GluedLoops
 from ..space.graph import MetricGraph
@@ -60,6 +61,7 @@ _SPACE_MODES: dict[str, str] = {
     MetricGraph.name: "graph",
     Sphere.name: "sphere",
     GluedLoops.name: "glued",
+    ArcPhases.name: "arcs",
 }
 
 # the glued-loops space always lives on the limacon; b = 0.150 is the
@@ -246,6 +248,18 @@ class MainWindow(QMainWindow):
             self.canvas2d.set_curves(self.space.polylines())
             self.status.set_series_name("r_alpha")
             self.stacked.setCurrentWidget(self.canvas2d)
+        elif mode == "arcs":
+            curve = self._make_curve(cfg.curve)
+            self.space = ArcPhases(curve, resolution=cfg.resolution)
+            omega = make_omega(cfg.omega_mode, cfg.n, rng)
+            self.model = GLUED_MODELS.get(cfg.model)(omega)
+            dynamics = ArcDynamics(
+                self.model, rng, self.space.forward_targets, self.space.backward_targets
+            )
+            state = self.space.initial_states(cfg.n, rng, "random")
+            self.canvas2d.set_curves(self.space.polylines())
+            self.status.set_series_name("r_alpha")
+            self.stacked.setCurrentWidget(self.canvas2d)
         elif mode == "sphere":
             self.space = Sphere()
             rotations = make_rotations(cfg.rotation_mode, cfg.n, rng)
@@ -259,7 +273,7 @@ class MainWindow(QMainWindow):
 
         self.sim = Simulation(dynamics, state, DEFAULT_DT, rng)
         self.controls.build_params(self.model.params, self.model.values)
-        if mode in ("circle", "graph", "glued"):
+        if mode in ("circle", "graph", "glued", "arcs"):
             self._active_curve_name = curve_name if mode == "glued" else cfg.curve
             self.controls.build_curve_params(curve.params, curve.values)
         else:
@@ -394,6 +408,23 @@ class MainWindow(QMainWindow):
             if self._glued_note:
                 lines.append(self._glued_note)
             self.status.set_extra("\n".join(lines))
+        elif self.mode == "arcs":
+            m = self.space.n_arcs
+            self.canvas2d.set_points(self.space.positions(state), loop_brushes(state.edge, m))
+            if not show_status:
+                return
+            r_alpha = order_parameter(state.alpha)
+            if stepped:
+                self.status.append(self.sim.t, r_alpha)
+                self.status.redraw()
+            counts = np.bincount(state.edge, minlength=m)
+            if m <= 8:
+                self.status.set_classification("arcs: " + " / ".join(str(c) for c in counts))
+            else:
+                self.status.set_classification(
+                    f"{m} arcs, occupancy {counts.min()}..{counts.max()}"
+                )
+            self.status.set_extra(f"r_alpha = {r_alpha:.3f}")
         elif self.mode == "sphere":
             self.canvas3d.set_points(state, direction_colors(state))
             if not show_status:
